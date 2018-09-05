@@ -1,0 +1,240 @@
+# -*- coding: utf-8 -*-
+"""
+Spyder Editor
+
+This is a temporary script file.
+"""
+
+import csv
+import re
+
+
+class FileLayout:
+    """
+    Parameters: layout_name, filetype, email_index, email_end_index=0
+    layout_name should be str, will be converted to lower
+    file_type should be 'flat' or 'csv', will be converted to lower
+    email_index is index of column or beginning byte index of email field
+    email_end_index should equal byte index just after email field
+        in flat files; will be used in a slice, so length of field should
+        equal email_index - email_end_index
+    """
+    def __init__(self, layout_name, filetype, email_index, email_end_index=0, name_indices=None, first_last=None):
+        self.layout_name = layout_name
+        self.filetype = filetype
+        self.email_index = email_index
+        self.email_end_index = email_end_index
+        self.name_indices = name_indices
+        self.first_last = first_last
+
+    def __str__(self):
+        attributes = '\nLayout Name: {}\nFile Type: {}\nEmail Index: {}'.format(self.layout_name, self.filetype, self.email_index)
+        if self.email_end_index != 0:
+            attributes += '\nEmail End Index: {}'.format(self.email_end_index)
+        if self.name_indices is not None:
+            attributes += '\nName Indices: {}'.format(self.name_indices)
+        if self.first_last is not None:
+            attributes += '\nFirst/Last Indices: {}'.format(self.first_last)
+        return attributes
+
+
+# Below file should contain explicit email domains as unquoted strings on separate lines
+EXPLICIT_DOMAINS = set()
+with open('ref/EXPLICIT_DOMAINS.txt') as file:
+    for line in file.readlines():
+        EXPLICIT_DOMAINS.add(line.strip())
+# Below file should contain valid district names as unquoted strings on separate lines
+VALID_DISTRICTS = set()
+with open('ref/VALID_DISTRICTS.txt') as file:
+    for line in file.readlines():
+        VALID_DISTRICTS.add(line.strip())
+# Below file should contain bogus name pairs as individual rows of length two consisting of first name then last name
+BOGUS_NAMES = set()
+with open('ref/BOGUS_NAMES.csv') as file:
+    reader = csv.reader(file)
+    for row in reader:
+        BOGUS_NAMES.add((row[0], row[1]))
+# See class constructor above for details on parameters
+FILE_LAYOUTS = [
+    FileLayout('act', 'flat', 550, 600, ((2, 27), (27, 43), (43, 44)), ((27, 43), (2, 27))),
+    FileLayout('pcl', 'flat', 199, 249, ((2, 22), (22, 23), (37, 62)), ((2, 22), (37, 62))),
+    FileLayout('sat', 'flat', 398, 526, ((6, 41), (41, 76), (76, 77)), ((41, 76), (6, 41))),
+    FileLayout('npc', 'csv', 11, 0, (3, 4, 5), (3, 5)),
+    FileLayout('gsp', 'csv', 14, 0, (3, 4, 5), (3, 5)),
+    FileLayout('gsa', 'csv', 4, 0, (0, 1, 2, 3), (1, 0)),
+    FileLayout('vis', 'csv', 8, 0, (6, 7), (6, 7))
+]
+
+
+def email_audit(filetype, filepath, email_index, email_end_index=0):
+    try:
+        if filetype.lower() not in ('csv', 'flat'):
+            raise ValueError("Specify 'csv' or 'flat' as file type.")
+        if (not isinstance(email_index, int)
+                or not isinstance(email_end_index, int)):
+            raise TypeError('Email indexes must be integers.')
+    except ValueError as e:
+        print(e.message)
+    except TypeError as e:
+        print(e.message)
+    else:
+        if filetype.lower() == 'csv':
+            newline = ''
+        elif filetype.lower() == 'flat':
+            newline = None
+        with open(filepath, newline=newline) as infile:
+            lines = None
+            if filetype.lower() == 'csv':
+                lines = csv.reader(infile)
+            elif filetype.lower() == 'flat':
+                lines = infile.readlines()
+            audit_rows = []
+            for index, row in enumerate(lines):
+                email = None
+                if filetype.lower() == 'csv':
+                    email = row[email_index]
+                elif filetype.lower() == 'flat':
+                    email = row[email_index:email_end_index].rstrip()
+                if email == '':
+                    continue
+                elif re.search(r'\s', email):
+                    audit_rows.append((index + 1, email, 'S'))
+                domain = re.search(r'@(.+)$', email.lower())
+                if domain:
+                    if domain[1] in EXPLICIT_DOMAINS:
+                        continue
+                    else:
+                        county_check = re.match(r'stu\.(.+?)\.kyschools\.us$', domain[1])
+                        if county_check and county_check[1] in VALID_DISTRICTS:
+                            continue
+                audit_rows.append((index + 1, email, 'M'))
+            with open('to_check.csv', 'w', newline='') as audit:
+                writer = csv.writer(audit)
+                writer.writerow(['RN', 'EMAIL', 'CODE'])
+                for row in audit_rows:
+                    writer.writerow(row)
+        return None
+
+
+def name_audit(filetype, filepath, name_indices, first_last=None):
+    """
+    Checks for name issues
+    DO NOT call except immediately after email_audit() until further notice
+    """
+    try:
+        if filetype.lower() not in ('csv', 'flat'):
+            raise ValueError("Specify 'csv' or 'flat' as file type.")
+        elif filetype.lower() == 'csv':
+            for index in name_indices:
+                if not isinstance(index, int):
+                    raise TypeError('Indices must be single integers.')
+        elif filetype.lower() == 'flat':
+            for index_pair in name_indices:
+                if not isinstance(index_pair, tuple) or len(index_pair) != 2:
+                    raise TypeError('Indices must be two-integer tuples.')
+                else:
+                    for index in index_pair:
+                        if not isinstance(index, int):
+                            raise TypeError('Indices must be two-integer tuples.')
+        if (first_last is not None
+                and (not isinstance(first_last, tuple) or len(first_last) != 2)):
+            raise TypeError('First and last must be given as a two-tuple.')
+        else:
+            if filetype.lower() == 'csv':
+                for index in first_last:
+                    if not isinstance(index, int):
+                        raise TypeError('First and last must be integers for CSV type.')
+            elif filetype.lower() == 'flat':
+                for index_pair in first_last:
+                    if not isinstance(index_pair, tuple):
+                        raise TypeError('First and last must be integer two-tuples for FLAT type.')
+                    else:
+                        for index in index_pair:
+                            if not isinstance(index, int):
+                                raise TypeError('First and last must be integer two-tuples for FLAT type.')
+    except ValueError as e:
+        print(e.message)
+    except TypeError as e:
+        print(e.message)
+    else:
+        if filetype.lower() == 'csv':
+            newline = ''
+        elif filetype.lower() == 'flat':
+            newline = None
+        with open(filepath, newline=newline) as infile:
+            lines = None
+            if filetype.lower() == 'csv':
+                lines = csv.reader(infile)
+            elif filetype.lower() == 'flat':
+                lines = infile.readlines()
+            audit_rows = []
+            for index, row in enumerate(lines):
+                names = []
+                fl_names = []
+                if filetype.lower() == 'csv':
+                    for name_index in name_indices:
+                        names.append(row[name_index])
+                    for name_index in first_last:
+                        fl_names.append(row[name_index].strip().lower())
+                elif filetype.lower() == 'flat':
+                    for index_pair in name_indices:
+                        names.append(row[index_pair[0]:index_pair[1]].rstrip())
+                    for index_pair in first_last:
+                        fl_names.append(row[index_pair[0]:index_pair[1]].strip().lower())
+                for name in names:
+                    if name != '' and re.search(r"[^- '\w]", name):
+                        audit_rows.append((index + 1, 'NAMEERROR!', 'W'))
+                        break
+                if len(fl_names[0]) < 2 or len(fl_names[1]) < 2:
+                    audit_rows.append((index + 1, 'NAMEERROR!', 'I'))
+                if tuple(fl_names) in BOGUS_NAMES:
+                    audit_rows.append((index + 1, 'NAMEERROR!', 'B'))
+            with open('to_check.csv', 'a', newline='') as audit:
+                writer = csv.writer(audit)
+                for row in audit_rows:
+                    writer.writerow(row)
+        return None
+
+
+def current_layouts():
+    list_view = []
+    for file_layout in FILE_LAYOUTS:
+        attributes = []
+        attributes.append(file_layout.layout_name)
+        attributes.append(file_layout.filetype)
+        attributes.append(file_layout.email_index)
+        if file_layout.filetype != 'csv':
+            attributes.append(file_layout.email_end_index)
+        list_view.append(attributes)
+    print('\nCurrently defined layouts:\n')
+    list_view.sort()
+    for file_layout in list_view:
+        print(file_layout)
+    print('')
+    return None
+
+
+def layout_audit(layout_name, filepath):
+    """
+    Parameters: layout_name, filepath
+    Checks email for predefined layouts
+    """
+    for file_layout in FILE_LAYOUTS:
+        if layout_name.lower() == file_layout.layout_name:
+            email_audit(
+                file_layout.filetype,
+                filepath,
+                file_layout.email_index,
+                email_end_index=file_layout.email_end_index
+            )
+            name_audit(
+                file_layout.filetype,
+                filepath,
+                file_layout.name_indices,
+                file_layout.first_last
+            )
+            return None
+        else:
+            continue
+    print('File layout not defined.')
+    return None
