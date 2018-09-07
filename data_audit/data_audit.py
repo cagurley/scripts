@@ -6,6 +6,7 @@ This is a temporary script file.
 """
 
 import csv
+import datetime as dt
 import re
 
 
@@ -19,13 +20,15 @@ class FileLayout:
         in flat files; will be used in a slice, so length of field should
         equal email_index - email_end_index
     """
-    def __init__(self, layout_name, filetype, email_index, email_end_index=0, name_indices=None, first_last=None):
+    def __init__(self, layout_name, filetype, email_index, email_end_index=0, name_indices=None, first_last=None, date_indices=None, format_mask=None):
         self.layout_name = layout_name
         self.filetype = filetype
         self.email_index = email_index
         self.email_end_index = email_end_index
         self.name_indices = name_indices
         self.first_last = first_last
+        self.date_indices = date_indices
+        self.format_mask = format_mask
 
     def __str__(self):
         attributes = '\nLayout Name: {}\nFile Type: {}\nEmail Index: {}'.format(self.layout_name, self.filetype, self.email_index)
@@ -35,6 +38,10 @@ class FileLayout:
             attributes += '\nName Indices: {}'.format(self.name_indices)
         if self.first_last is not None:
             attributes += '\nFirst/Last Indices: {}'.format(self.first_last)
+        if self.date_indices is not None:
+            attributes += '\nDate Indices: {}'.format(self.date_indices)
+        if self.format_mask is not None:
+            attributes += '\nFormat Mask: {}'.format(self.format_mask)
         return attributes
 
 
@@ -57,7 +64,7 @@ with open('ref/BOGUS_NAMES.csv') as file:
 # See class constructor above for details on parameters
 FILE_LAYOUTS = [
     FileLayout('act', 'flat', 550, 600, ((2, 27), (27, 43), (43, 44)), ((27, 43), (2, 27))),
-    FileLayout('pcl', 'flat', 199, 249, ((2, 22), (22, 23), (37, 62)), ((2, 22), (37, 62))),
+    FileLayout('pcl', 'flat', 199, 249, ((2, 22), (22, 23), (37, 62)), ((2, 22), (37, 62)), ((86, 94),), '%Y%m%d'),
     FileLayout('sat', 'flat', 398, 526, ((6, 41), (41, 76), (76, 77)), ((41, 76), (6, 41))),
     FileLayout('npc', 'csv', 11, 0, (3, 4, 5), (3, 5)),
     FileLayout('gsp', 'csv', 14, 0, (3, 4, 5), (3, 5)),
@@ -98,7 +105,11 @@ def email_audit(filetype, filepath, email_index, email_end_index=0):
                 if email == '':
                     continue
                 elif re.search(r'\s', email):
-                    audit_rows.append((index + 1, email, 'S'))
+                    audit_rows.append((index + 1, email, 'EMAIL', 'Whitespace Error'))
+                    continue
+                elif not re.match(r"[\d\w!#$%&'*+-/=?^`{|}~]+(\.[\d\w!#$%&'*+-/=?^`{|}~]+)*@(?!-)[-\da-zA-Z]+(?<!-)(\.(?!-)[-\da-zA-Z]+(?<!-))+$", email, re.A):
+                    audit_rows.append((index + 1, email, 'EMAIL', 'Malformation Error'))
+                    continue
                 domain = re.search(r'@(.+)$', email.lower())
                 if domain:
                     if domain[1] in EXPLICIT_DOMAINS:
@@ -107,10 +118,10 @@ def email_audit(filetype, filepath, email_index, email_end_index=0):
                         county_check = re.match(r'stu\.(.+?)\.kyschools\.us$', domain[1])
                         if county_check and county_check[1] in VALID_DISTRICTS:
                             continue
-                audit_rows.append((index + 1, email, 'M'))
+                audit_rows.append((index + 1, email, 'EMAIL', 'Domain Error'))
             with open('to_check.csv', 'w', newline='') as audit:
                 writer = csv.writer(audit)
-                writer.writerow(['RN', 'EMAIL', 'CODE'])
+                writer.writerow(['RN', 'CONTENT', 'TYPE', 'ERROR'])
                 for row in audit_rows:
                     writer.writerow(row)
         return None
@@ -183,12 +194,70 @@ def name_audit(filetype, filepath, name_indices, first_last=None):
                         fl_names.append(row[index_pair[0]:index_pair[1]].strip().lower())
                 for name in names:
                     if name != '' and re.search(r"[^- '\w]", name):
-                        audit_rows.append((index + 1, 'NAMEERROR!', 'W'))
+                        audit_rows.append((index + 1, name, 'NAME', 'Character Error'))
                         break
                 if len(fl_names[0]) < 2 or len(fl_names[1]) < 2:
-                    audit_rows.append((index + 1, 'NAMEERROR!', 'I'))
-                if tuple(fl_names) in BOGUS_NAMES:
-                    audit_rows.append((index + 1, 'NAMEERROR!', 'B'))
+                    audit_rows.append((index + 1, fl_names[0] + ' ' + fl_names[1], 'NAME', 'Length Error'))
+                elif tuple(fl_names) in BOGUS_NAMES:
+                    audit_rows.append((index + 1, fl_names[0] + ' ' + fl_names[1], 'NAME', 'Bogus Name Error'))
+            with open('to_check.csv', 'a', newline='') as audit:
+                writer = csv.writer(audit)
+                for row in audit_rows:
+                    writer.writerow(row)
+        return None
+
+
+def date_audit(filetype, filepath, date_indices, format_mask):
+    try:
+        if filetype.lower() not in ('csv', 'flat'):
+            raise ValueError("Specify 'csv' or 'flat' as file type.")
+        elif filetype.lower() == 'csv':
+            for index in date_indices:
+                if not isinstance(index, int):
+                    raise TypeError('Indices must be single integers.')
+        elif filetype.lower() == 'flat':
+            for index_pair in date_indices:
+                if not isinstance(index_pair, tuple) or len(index_pair) != 2:
+                    raise TypeError('Indices must be two-integer tuples.')
+                else:
+                    for index in index_pair:
+                        if not isinstance(index, int):
+                            raise TypeError('Indices must be two-integer tuples.')
+    except ValueError as e:
+        print(e.message)
+    except TypeError as e:
+        print(e.message)
+    else:
+        if filetype.lower() == 'csv':
+            newline = ''
+        elif filetype.lower() == 'flat':
+            newline = None
+        with open(filepath, newline=newline) as infile:
+            lines = None
+            if filetype.lower() == 'csv':
+                lines = csv.reader(infile)
+            elif filetype.lower() == 'flat':
+                lines = infile.readlines()
+            audit_rows = []
+            for index, row in enumerate(lines):
+                date_strings = []
+                if filetype.lower() == 'csv':
+                    for index in date_indices:
+                        date_strings.append(row[index])
+                elif filetype.lower() == 'flat':
+                    for index_pair in date_indices:
+                        date_strings.append(row[index_pair[0]:index_pair[1]])
+                for date_string in date_strings:
+                    date = None
+                    try:
+                        date = dt.datetime.strptime(date_string, format_mask)
+                    except ValueError:
+                        audit_rows.append((index + 1, date_string, 'DATE', 'Invalid Date Error'))
+                    else:
+                        if dt.datetime.today().year - date.year < 0:
+                            audit_rows.append((index + 1, date_string, 'DATE', 'Future Date Error'))
+                        elif dt.datetime.today().year - date.year > 90:
+                            audit_rows.append((index + 1, date_string, 'DATE', 'Old Date Error'))
             with open('to_check.csv', 'a', newline='') as audit:
                 writer = csv.writer(audit)
                 for row in audit_rows:
@@ -233,6 +302,14 @@ def layout_audit(layout_name, filepath):
                 file_layout.name_indices,
                 file_layout.first_last
             )
+            if (file_layout.date_indices is not None
+                    and file_layout.format_mask is not None):
+                date_audit(
+                    file_layout.filetype,
+                    filepath,
+                    file_layout.date_indices,
+                    file_layout.format_mask
+                )
             return None
         else:
             continue
