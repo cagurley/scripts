@@ -193,7 +193,7 @@ def name_audit(filetype, filepath, name_indices, first_last=None):
                     for index_pair in first_last:
                         fl_names.append(row[index_pair[0]:index_pair[1]].strip().lower())
                 for name in names:
-                    if name != '' and re.search(r"[^- '\w]", name):
+                    if name != '' and re.search(r"[^-'\w]", name):
                         audit_rows.append((index + 1, name, 'NAME', 'Character Error'))
                         break
                 if len(fl_names[0]) < 2 or len(fl_names[1]) < 2:
