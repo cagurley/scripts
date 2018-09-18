@@ -66,6 +66,7 @@ FILE_LAYOUTS = [
     FileLayout('act', 'flat', 550, 600, ((2, 27), (27, 43), (43, 44)), ((27, 43), (2, 27))),
     FileLayout('pcl', 'flat', 199, 249, ((2, 22), (22, 23), (37, 62)), ((2, 22), (37, 62)), ((86, 94),), '%Y%m%d'),
     FileLayout('sat', 'flat', 398, 526, ((6, 41), (41, 76), (76, 77)), ((41, 76), (6, 41))),
+    FileLayout('cfa', 'csv', 23, 0, (3, 4, 5), (3, 5), (15,), '%m/%d/%Y'),
     FileLayout('npc', 'csv', 11, 0, (3, 4, 5), (3, 5)),
     FileLayout('gsp', 'csv', 14, 0, (3, 4, 5), (3, 5)),
     FileLayout('gsa', 'csv', 4, 0, (0, 1, 2, 3), (1, 0)),
@@ -242,8 +243,8 @@ def date_audit(filetype, filepath, date_indices, format_mask):
             for index, row in enumerate(lines):
                 date_strings = []
                 if filetype.lower() == 'csv':
-                    for index in date_indices:
-                        date_strings.append(row[index])
+                    for date_index in date_indices:
+                        date_strings.append(row[date_index])
                 elif filetype.lower() == 'flat':
                     for index_pair in date_indices:
                         date_strings.append(row[index_pair[0]:index_pair[1]])
