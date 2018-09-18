@@ -18,7 +18,7 @@ def split_visits(filepath, file_date):
         if len(file_date) != 8 or not file_date.isdigit():
             raise ValueError("File date must be of form 'MMDDYYYY'")
     except ValueError as e:
-        print(e.message)
+        print(str(e))
     else:
         # Declare variables needed
         filepath = filepath.replace('\\', '/')

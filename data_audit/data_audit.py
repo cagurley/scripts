@@ -81,9 +81,9 @@ def email_audit(filetype, filepath, email_index, email_end_index=0):
                 or not isinstance(email_end_index, int)):
             raise TypeError('Email indexes must be integers.')
     except ValueError as e:
-        print(e.message)
+        print(str(e))
     except TypeError as e:
-        print(e.message)
+        print(str(e))
     else:
         if filetype.lower() == 'csv':
             newline = ''
@@ -164,9 +164,9 @@ def name_audit(filetype, filepath, name_indices, first_last=None):
                             if not isinstance(index, int):
                                 raise TypeError('First and last must be integer two-tuples for FLAT type.')
     except ValueError as e:
-        print(e.message)
+        print(str(e))
     except TypeError as e:
-        print(e.message)
+        print(str(e))
     else:
         if filetype.lower() == 'csv':
             newline = ''
@@ -224,9 +224,9 @@ def date_audit(filetype, filepath, date_indices, format_mask):
                         if not isinstance(index, int):
                             raise TypeError('Indices must be two-integer tuples.')
     except ValueError as e:
-        print(e.message)
+        print(str(e))
     except TypeError as e:
-        print(e.message)
+        print(str(e))
     else:
         if filetype.lower() == 'csv':
             newline = ''
