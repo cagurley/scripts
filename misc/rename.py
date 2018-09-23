@@ -43,7 +43,7 @@ def seq_ren_files(dirpath, start_num=1, num_digits=2, prefix=''):
             new_name = str(prefix) + counter + '.' + extension
             new_path = os.path.join(dirpath, new_name)
             temp_name = new_name
-            if file != new_path and os.access(new_path, os.F_OK):
+            if file.lower() != new_path.lower() and os.access(new_path, os.F_OK):
                 while os.access(os.path.join(dirpath, temp_name), os.F_OK):
                     temp_name = 'TEMP' + temp_name
                 try:
