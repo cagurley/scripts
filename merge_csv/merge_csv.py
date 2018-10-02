@@ -31,14 +31,17 @@ def merge_csv(dirpath, files, new_filename):
         if isinstance(os.altsep, str):
             dirpath = dirpath.rstrip(r'\/').replace(os.altsep, os.sep)
         new_filepath = os.path.join(dirpath, new_filename + '.csv')
+        if os.path.exists(new_filepath):
+            warning = input('A file named {} in {} already exists? Continue (Y, n)? '.format(new_filename, dirpath))
+            if warning.lower() not in ('y', 'yes'):
+                print('Merge aborted.')
+                return None
         file_tuples = []
         if (
             not os.path.exists(dirpath)
             or not os.access(dirpath, os.W_OK)
         ):
             raise ValueError("'{}': Directory path does not exist or cannot write to directory.".format(dirpath))
-#        if not os.access(new_filepath, os.W_OK):
-#            raise ValueError("'{}': Cannot write to new file.".format(new_filename + '.csv'))
         for index, file in enumerate(files):
             if not isinstance(file, File):
                 raise TypeError("files[{}]: Object is not a File instance.".format(index))
