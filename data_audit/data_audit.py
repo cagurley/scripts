@@ -8,6 +8,7 @@ This is a temporary script file.
 import csv
 import datetime as dt
 import re
+import tempfile as tf
 
 
 class FileLayout:
@@ -66,12 +67,35 @@ FILE_LAYOUTS = [
     FileLayout('act', 'flat', 550, 600, ((2, 27), (27, 43), (43, 44)), ((27, 43), (2, 27))),
     FileLayout('pcl', 'flat', 199, 249, ((2, 22), (22, 23), (37, 62)), ((2, 22), (37, 62)), ((86, 94),), '%Y%m%d'),
     FileLayout('sat', 'flat', 398, 526, ((6, 41), (41, 76), (76, 77)), ((41, 76), (6, 41))),
+    FileLayout('cpd', 'csv', 3, 0, (0, 1), (0, 1), (4,), '%m/%d/%Y'),
     FileLayout('cfa', 'csv', 23, 0, (3, 4, 5), (3, 5), (15,), '%m/%d/%Y'),
     FileLayout('npc', 'csv', 11, 0, (3, 4, 5), (3, 5)),
     FileLayout('gsp', 'csv', 14, 0, (3, 4, 5), (3, 5)),
     FileLayout('gsa', 'csv', 4, 0, (0, 1, 2, 3), (1, 0)),
     FileLayout('vis', 'csv', 8, 0, (6, 7), (6, 7))
 ]
+
+
+def strip_csv(filetype, filepath):
+    try:
+        if filetype.lower() != 'csv':
+            raise ValueError("File type must be 'csv'.")
+    except ValueError as e:
+        print(str(e))
+    else:
+        with tf.TemporaryFile('w+', newline='') as tempfile:
+            treader = csv.reader(tempfile)
+            twriter = csv.writer(tempfile)
+            with open(filepath, newline='') as file:
+                reader = csv.reader(file)
+                for row in reader:
+                    for index, entry in enumerate(row):
+                        row[index] = entry.strip()
+                    twriter.writerow(row)
+            with open(filepath, 'w', newline='') as file:
+                tempfile.seek(0)
+                writer = csv.writer(file)
+                writer.writerows(treader)
 
 
 def email_audit(filetype, filepath, email_index, email_end_index=0):
@@ -289,8 +313,15 @@ def layout_audit(layout_name, filepath):
     Parameters: layout_name, filepath
     Checks email for predefined layouts
     """
+    print('\nChecking for layout definition...')
     for file_layout in FILE_LAYOUTS:
         if layout_name.lower() == file_layout.layout_name:
+            print('Definition found. Parsing file...')
+            if file_layout.filetype.lower() == 'csv':
+                strip_csv(
+                    file_layout.filetype,
+                    filepath
+                )
             email_audit(
                 file_layout.filetype,
                 filepath,
@@ -311,8 +342,9 @@ def layout_audit(layout_name, filepath):
                     file_layout.date_indices,
                     file_layout.format_mask
                 )
+            print('Audit complete.\n')
             return None
         else:
             continue
-    print('File layout not defined.')
+    print('File layout not defined.\n')
     return None
