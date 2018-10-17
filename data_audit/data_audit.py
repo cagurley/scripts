@@ -32,17 +32,17 @@ class FileLayout:
         self.format_mask = format_mask
 
     def __str__(self):
-        attributes = '\nLayout Name: {}\nFile Type: {}\nEmail Index: {}'.format(self.layout_name, self.filetype, self.email_index)
+        attributes = '\n  Layout Name: {}\n  File Type: {}\n  Email Index: {}'.format(self.layout_name, self.filetype, self.email_index)
         if self.email_end_index != 0:
-            attributes += '\nEmail End Index: {}'.format(self.email_end_index)
+            attributes += '\n  Email End Index: {}'.format(self.email_end_index)
         if self.name_indices is not None:
-            attributes += '\nName Indices: {}'.format(self.name_indices)
+            attributes += '\n  Name Indices: {}'.format(self.name_indices)
         if self.first_last is not None:
-            attributes += '\nFirst/Last Indices: {}'.format(self.first_last)
+            attributes += '\n  First/Last Indices: {}'.format(self.first_last)
         if self.date_indices is not None:
-            attributes += '\nDate Indices: {}'.format(self.date_indices)
+            attributes += '\n  Date Indices: {}'.format(self.date_indices)
         if self.format_mask is not None:
-            attributes += '\nFormat Mask: {}'.format(self.format_mask)
+            attributes += '\n  Format Mask: {}'.format(self.format_mask)
         return attributes
 
 
@@ -293,18 +293,28 @@ def date_audit(filetype, filepath, date_indices, format_mask):
 def current_layouts():
     list_view = []
     for file_layout in FILE_LAYOUTS:
-        attributes = []
-        attributes.append(file_layout.layout_name)
-        attributes.append(file_layout.filetype)
-        attributes.append(file_layout.email_index)
-        if file_layout.filetype != 'csv':
-            attributes.append(file_layout.email_end_index)
-        list_view.append(attributes)
+        summary = "  {}: {}".format(
+            file_layout.layout_name,
+            file_layout.filetype
+        )
+        list_view.append(summary)
     print('\nCurrently defined layouts:\n')
     list_view.sort()
-    for file_layout in list_view:
-        print(file_layout)
-    print('')
+    for summary in list_view:
+        print(summary)
+    print('\nTo see full details for a layout, use layout_def(layout_name).\n')
+    return None
+
+
+def layout_def(layout_name):
+    for file_layout in FILE_LAYOUTS:
+        if layout_name.lower() == file_layout.layout_name:
+            print(file_layout)
+            print('')
+            return None
+        else:
+            continue
+    print('\nFile layout not defined.\n')
     return None
 
 
@@ -317,7 +327,7 @@ def layout_audit(layout_name, filepath):
     for file_layout in FILE_LAYOUTS:
         if layout_name.lower() == file_layout.layout_name:
             print('Definition found. Parsing file...')
-            if file_layout.filetype.lower() == 'csv':
+            if file_layout.filetype == 'csv':
                 strip_csv(
                     file_layout.filetype,
                     filepath
