@@ -96,9 +96,25 @@ def strip_csv(filetype, filepath):
                 tempfile.seek(0)
                 writer = csv.writer(file)
                 writer.writerows(treader)
+        return None
 
 
-def email_audit(filetype, filepath, email_index, email_end_index=0):
+def write_audit(rows, mode='a', header=False):
+    try:
+        with open('to_check.csv', mode, newline='') as audit:
+            writer = csv.writer(audit)
+            if header is True:
+                writer.writerow(['RN', 'CONTENT', 'TYPE', 'ERROR'])
+            for row in rows:
+                writer.writerow(row)
+    except Exception as e:
+        print(str(e))
+    else:
+        return None
+        
+
+
+def email_audit(filetype, filepath, email_index, email_end_index=0, audit_mode='a', audit_header=False):
     try:
         if filetype.lower() not in ('csv', 'flat'):
             raise ValueError("Specify 'csv' or 'flat' as file type.")
@@ -144,15 +160,11 @@ def email_audit(filetype, filepath, email_index, email_end_index=0):
                         if county_check and county_check[1] in VALID_DISTRICTS:
                             continue
                 audit_rows.append((index + 1, email, 'EMAIL', 'Domain Error'))
-            with open('to_check.csv', 'w', newline='') as audit:
-                writer = csv.writer(audit)
-                writer.writerow(['RN', 'CONTENT', 'TYPE', 'ERROR'])
-                for row in audit_rows:
-                    writer.writerow(row)
+            write_audit(audit_rows, audit_mode, audit_header)
         return None
 
 
-def name_audit(filetype, filepath, name_indices, first_last=None):
+def name_audit(filetype, filepath, name_indices, first_last=None, audit_mode='a', audit_header=False):
     """
     Checks for name issues
     DO NOT call except immediately after email_audit() until further notice
@@ -225,14 +237,11 @@ def name_audit(filetype, filepath, name_indices, first_last=None):
                     audit_rows.append((index + 1, fl_names[0] + ' ' + fl_names[1], 'NAME', 'Length Error'))
                 elif tuple(fl_names) in BOGUS_NAMES:
                     audit_rows.append((index + 1, fl_names[0] + ' ' + fl_names[1], 'NAME', 'Bogus Name Error'))
-            with open('to_check.csv', 'a', newline='') as audit:
-                writer = csv.writer(audit)
-                for row in audit_rows:
-                    writer.writerow(row)
+            write_audit(audit_rows, audit_mode, audit_header)
         return None
 
 
-def date_audit(filetype, filepath, date_indices, format_mask):
+def date_audit(filetype, filepath, date_indices, format_mask, audit_mode='a', audit_header=False):
     try:
         if filetype.lower() not in ('csv', 'flat'):
             raise ValueError("Specify 'csv' or 'flat' as file type.")
@@ -283,10 +292,7 @@ def date_audit(filetype, filepath, date_indices, format_mask):
                             audit_rows.append((index + 1, date_string, 'DATE', 'Future Date Error'))
                         elif dt.datetime.today().year - date.year > 90:
                             audit_rows.append((index + 1, date_string, 'DATE', 'Old Date Error'))
-            with open('to_check.csv', 'a', newline='') as audit:
-                writer = csv.writer(audit)
-                for row in audit_rows:
-                    writer.writerow(row)
+            write_audit(audit_rows, audit_mode, audit_header)
         return None
 
 
@@ -336,7 +342,9 @@ def layout_audit(layout_name, filepath):
                 file_layout.filetype,
                 filepath,
                 file_layout.email_index,
-                email_end_index=file_layout.email_end_index
+                file_layout.email_end_index,
+                'w',
+                True
             )
             name_audit(
                 file_layout.filetype,
