@@ -21,7 +21,7 @@ class FileLayout:
         in flat files; will be used in a slice, so length of field should
         equal email_index - email_end_index
     """
-    def __init__(self, layout_name, filetype, email_indices, name_indices=None, first_last=None, date_indices=None, format_mask=None):
+    def __init__(self, layout_name, filetype, email_indices=None, name_indices=None, first_last=None, date_indices=None, format_mask=None):
         self.layout_name = layout_name
         self.filetype = filetype
         self.email_indices = email_indices
@@ -31,7 +31,9 @@ class FileLayout:
         self.format_mask = format_mask
 
     def __str__(self):
-        attributes = '\n  Layout Name: {}\n  File Type: {}\n  Email Indices: {}'.format(self.layout_name, self.filetype, self.email_indices)
+        attributes = '\n  Layout Name: {}\n  File Type: {}'.format(self.layout_name, self.filetype)
+        if self.email_indices is not None:
+            attributes += '\n  Email Indices: {}'.format(self.email_indices)
         if self.name_indices is not None:
             attributes += '\n  Name Indices: {}'.format(self.name_indices)
         if self.first_last is not None:
@@ -215,7 +217,7 @@ def email_audit(filetype, filepath, email_indices, audit_mode='a', audit_header=
 def name_audit(filetype, filepath, name_indices, first_last=None, audit_mode='a', audit_header=False):
     """
     Checks for name issues
-    DO NOT call except immediately after email_audit() until further notice
+    DO NOT call without specifying valid first_last indices until further notice
     """
     try:
         if filetype.lower() not in ('csv', 'flat'):
@@ -234,7 +236,7 @@ def name_audit(filetype, filepath, name_indices, first_last=None, audit_mode='a'
                             raise TypeError('Indices must be two-integer tuples.')
         if first_last is not None and len(first_last) != 2:
             raise TypeError('First and last must be an iterable of length two.')
-        else:
+        elif first_last is not None:
             if filetype.lower() == 'csv':
                 for index in first_last:
                     if not isinstance(index, int):
@@ -380,31 +382,42 @@ def layout_audit(layout_name, filepath):
     for file_layout in FILE_LAYOUTS:
         if layout_name.lower() == file_layout.layout_name:
             print('Definition found. Parsing file...')
+            audit_mode = 'w'
+            audit_header = True
             if file_layout.filetype == 'csv':
                 strip_csv(
                     file_layout.filetype,
                     filepath
                 )
-            email_audit(
-                file_layout.filetype,
-                filepath,
-                file_layout.email_indices,
-                'w',
-                True
-            )
-            name_audit(
-                file_layout.filetype,
-                filepath,
-                file_layout.name_indices,
-                file_layout.first_last
-            )
-            if (file_layout.date_indices is not None
-                    and file_layout.format_mask is not None):
+            if file_layout.email_indices:
+                email_audit(
+                    file_layout.filetype,
+                    filepath,
+                    file_layout.email_indices,
+                    audit_mode,
+                    audit_header
+                )
+                audit_mode = 'a'
+                audit_header = False
+            if file_layout.name_indices:
+                name_audit(
+                    file_layout.filetype,
+                    filepath,
+                    file_layout.name_indices,
+                    file_layout.first_last,
+                    audit_mode,
+                    audit_header
+                )
+                audit_mode = 'a'
+                audit_header = False
+            if file_layout.date_indices and file_layout.format_mask:
                 date_audit(
                     file_layout.filetype,
                     filepath,
                     file_layout.date_indices,
-                    file_layout.format_mask
+                    file_layout.format_mask,
+                    audit_mode,
+                    audit_header
                 )
             print('Audit complete.\n')
             return None
