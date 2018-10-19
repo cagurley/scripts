@@ -21,20 +21,17 @@ class FileLayout:
         in flat files; will be used in a slice, so length of field should
         equal email_index - email_end_index
     """
-    def __init__(self, layout_name, filetype, email_index, email_end_index=0, name_indices=None, first_last=None, date_indices=None, format_mask=None):
+    def __init__(self, layout_name, filetype, email_indices, name_indices=None, first_last=None, date_indices=None, format_mask=None):
         self.layout_name = layout_name
         self.filetype = filetype
-        self.email_index = email_index
-        self.email_end_index = email_end_index
+        self.email_indices = email_indices
         self.name_indices = name_indices
         self.first_last = first_last
         self.date_indices = date_indices
         self.format_mask = format_mask
 
     def __str__(self):
-        attributes = '\n  Layout Name: {}\n  File Type: {}\n  Email Index: {}'.format(self.layout_name, self.filetype, self.email_index)
-        if self.email_end_index != 0:
-            attributes += '\n  Email End Index: {}'.format(self.email_end_index)
+        attributes = '\n  Layout Name: {}\n  File Type: {}\n  Email Indices: {}'.format(self.layout_name, self.filetype, self.email_indices)
         if self.name_indices is not None:
             attributes += '\n  Name Indices: {}'.format(self.name_indices)
         if self.first_last is not None:
@@ -64,15 +61,54 @@ with open('ref/BOGUS_NAMES.csv') as file:
         BOGUS_NAMES.add((row[0], row[1]))
 # See class constructor above for details on parameters
 FILE_LAYOUTS = [
-    FileLayout('act', 'flat', 550, 600, ((2, 27), (27, 43), (43, 44)), ((27, 43), (2, 27))),
-    FileLayout('pcl', 'flat', 199, 249, ((2, 22), (22, 23), (37, 62)), ((2, 22), (37, 62)), ((86, 94),), '%Y%m%d'),
-    FileLayout('sat', 'flat', 398, 526, ((6, 41), (41, 76), (76, 77)), ((41, 76), (6, 41))),
-    FileLayout('cpd', 'csv', 3, 0, (0, 1), (0, 1), (4,), '%m/%d/%Y'),
-    FileLayout('cfa', 'csv', 23, 0, (3, 4, 5), (3, 5), (15,), '%m/%d/%Y'),
-    FileLayout('npc', 'csv', 11, 0, (3, 4, 5), (3, 5)),
-    FileLayout('gsp', 'csv', 14, 0, (3, 4, 5), (3, 5)),
-    FileLayout('gsa', 'csv', 4, 0, (0, 1, 2, 3), (1, 0)),
-    FileLayout('vis', 'csv', 8, 0, (6, 7), (6, 7))
+    FileLayout(
+        'act', 'flat',
+        [(550, 600)],
+        [(2, 27), (27, 43), (43, 44)], [(27, 43), (2, 27)]
+    ),
+    FileLayout(
+        'pcl', 'flat',
+        [(199, 249)],
+        [(2, 22), (22, 23), (37, 62)], [(2, 22), (37, 62)],
+        [(86, 94)], '%Y%m%d'
+    ),
+    FileLayout(
+        'sat', 'flat',
+        [(398, 526)],
+        [(6, 41), (41, 76), (76, 77)], [(41, 76), (6, 41)]
+    ),
+    FileLayout(
+        'cpd', 'csv',
+        [3],
+        [0, 1], [0, 1],
+        [4], '%m/%d/%Y'
+    ),
+    FileLayout(
+        'cfa', 'csv',
+        [23],
+        [3, 4, 5], [3, 5],
+        [15], '%m/%d/%Y'
+    ),
+    FileLayout(
+        'npc', 'csv',
+        [11],
+        [3, 4, 5], [3, 5]
+    ),
+    FileLayout(
+        'gsp', 'csv',
+        [14],
+        [3, 4, 5], [3, 5]
+    ),
+    FileLayout(
+        'gsa', 'csv',
+        [4],
+        [0, 1, 2, 3], [1, 0]
+    ),
+    FileLayout(
+        'vis', 'csv',
+        [8],
+        [6, 7], [6, 7]
+    )
 ]
 
 
@@ -114,13 +150,22 @@ def write_audit(rows, mode='a', header=False):
         
 
 
-def email_audit(filetype, filepath, email_index, email_end_index=0, audit_mode='a', audit_header=False):
+def email_audit(filetype, filepath, email_indices, audit_mode='a', audit_header=False):
     try:
         if filetype.lower() not in ('csv', 'flat'):
             raise ValueError("Specify 'csv' or 'flat' as file type.")
-        if (not isinstance(email_index, int)
-                or not isinstance(email_end_index, int)):
-            raise TypeError('Email indexes must be integers.')
+        elif filetype.lower() == 'csv':
+            for index in email_indices:
+                if not isinstance(index, int):
+                    raise TypeError('Indices must be single integers.')
+        elif filetype.lower() == 'flat':
+            for index_pair in email_indices:
+                if not isinstance(index_pair, tuple) or len(index_pair) != 2:
+                    raise TypeError('Indices must be two-integer tuples.')
+                else:
+                    for index in index_pair:
+                        if not isinstance(index, int):
+                            raise TypeError('Indices must be two-integer tuples.')
     except ValueError as e:
         print(str(e))
     except TypeError as e:
@@ -138,28 +183,31 @@ def email_audit(filetype, filepath, email_index, email_end_index=0, audit_mode='
                 lines = infile.readlines()
             audit_rows = []
             for index, row in enumerate(lines):
-                email = None
+                emails = []
                 if filetype.lower() == 'csv':
-                    email = row[email_index]
+                    for email_index in email_indices:
+                        emails.append(row[email_index])
                 elif filetype.lower() == 'flat':
-                    email = row[email_index:email_end_index].rstrip()
-                if email == '':
-                    continue
-                elif re.search(r'\s', email):
-                    audit_rows.append((index + 1, email, 'EMAIL', 'Whitespace Error'))
-                    continue
-                elif not re.match(r"[\d\w!#$%&'*+-/=?^`{|}~]+(\.[\d\w!#$%&'*+-/=?^`{|}~]+)*@(?!-)[-\da-zA-Z]+(?<!-)(\.(?!-)[-\da-zA-Z]+(?<!-))+$", email, re.A):
-                    audit_rows.append((index + 1, email, 'EMAIL', 'Malformation Error'))
-                    continue
-                domain = re.search(r'@(.+)$', email.lower())
-                if domain:
-                    if domain[1] in EXPLICIT_DOMAINS:
+                    for index_pair in email_indices:
+                        emails.append(row[index_pair[0]:index_pair[1]].rstrip())
+                for email in emails:
+                    if email == '':
                         continue
-                    else:
-                        county_check = re.match(r'stu\.(.+?)\.kyschools\.us$', domain[1])
-                        if county_check and county_check[1] in VALID_DISTRICTS:
+                    elif re.search(r'\s', email):
+                        audit_rows.append((index + 1, email, 'EMAIL', 'Whitespace Error'))
+                        continue
+                    elif not re.match(r"[\d\w!#$%&'*+-/=?^`{|}~]+(\.[\d\w!#$%&'*+-/=?^`{|}~]+)*@(?!-)[-\da-zA-Z]+(?<!-)(\.(?!-)[-\da-zA-Z]+(?<!-))+$", email, re.A):
+                        audit_rows.append((index + 1, email, 'EMAIL', 'Malformation Error'))
+                        continue
+                    domain = re.search(r'@(.+)$', email.lower())
+                    if domain:
+                        if domain[1] in EXPLICIT_DOMAINS:
                             continue
-                audit_rows.append((index + 1, email, 'EMAIL', 'Domain Error'))
+                        else:
+                            county_check = re.match(r'stu\.(.+?)\.kyschools\.us$', domain[1])
+                            if county_check and county_check[1] in VALID_DISTRICTS:
+                                continue
+                    audit_rows.append((index + 1, email, 'EMAIL', 'Domain Error'))
             write_audit(audit_rows, audit_mode, audit_header)
         return None
 
@@ -184,9 +232,8 @@ def name_audit(filetype, filepath, name_indices, first_last=None, audit_mode='a'
                     for index in index_pair:
                         if not isinstance(index, int):
                             raise TypeError('Indices must be two-integer tuples.')
-        if (first_last is not None
-                and (not isinstance(first_last, tuple) or len(first_last) != 2)):
-            raise TypeError('First and last must be given as a two-tuple.')
+        if first_last is not None and len(first_last) != 2:
+            raise TypeError('First and last must be an iterable of length two.')
         else:
             if filetype.lower() == 'csv':
                 for index in first_last:
@@ -341,8 +388,7 @@ def layout_audit(layout_name, filepath):
             email_audit(
                 file_layout.filetype,
                 filepath,
-                file_layout.email_index,
-                file_layout.email_end_index,
+                file_layout.email_indices,
                 'w',
                 True
             )
