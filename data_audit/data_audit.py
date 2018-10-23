@@ -13,13 +13,23 @@ import tempfile as tf
 
 class FileLayout:
     """
-    Parameters: layout_name, filetype, email_index, email_end_index=0
+    Parameters: layout_name, filetype, email_indices, name_indices,
+    first_last, date_indices, format_mask
+
+    All '%indices' parameters take an iterable of column indices for CSV files
+    or two-tuples of character indices for FLAT files that bound a given field.
+    The parsing functions generally accept any number of fields of a given
+    type, so these iterables can contain index references to multiple fields
+    for this purpose. FLAT file index tuples will be used in a slice, so length
+    of field should equal tuple_pair[0] - tuple_pair[1].
+
     layout_name should be str, will be converted to lower
     file_type should be 'flat' or 'csv', will be converted to lower
-    email_index is index of column or beginning byte index of email field
-    email_end_index should equal byte index just after email field
-        in flat files; will be used in a slice, so length of field should
-        equal email_index - email_end_index
+    email_indices should define all email fields to be checked
+    name_indices should define all name fields to be checked
+    first_last should define exactly first and last name fields in order
+    date_indices should define all date fields to be checked
+    format_mask is a standard datetime format mask used in checking all dates
     """
     def __init__(self, layout_name, filetype, email_indices=None, name_indices=None, first_last=None, date_indices=None, format_mask=None):
         self.layout_name = layout_name
@@ -69,6 +79,10 @@ FILE_LAYOUTS = [
         [(2, 27), (27, 43), (43, 44)], [(27, 43), (2, 27)]
     ),
     FileLayout(
+        'ap', 'flat',
+        name_indices=[(8, 23), (23, 35)], first_last=[(23, 35), (8, 23)]
+    ),
+    FileLayout(
         'pcl', 'flat',
         [(199, 249)],
         [(2, 22), (22, 23), (37, 62)], [(2, 22), (37, 62)],
@@ -114,6 +128,44 @@ FILE_LAYOUTS = [
 ]
 
 
+def clean_whitespace(filetype, filepath):
+    try:
+        if filetype.lower() not in ('csv', 'flat'):
+            raise ValueError("Specify 'csv' or 'flat' as file type.")
+    except ValueError as e:
+        print(str(e))
+    else:
+        if filetype == 'csv':
+            with tf.TemporaryFile('w+', newline='') as tempfile:
+                treader = csv.reader(tempfile)
+                twriter = csv.writer(tempfile)
+                with open(filepath, newline='') as file:
+                    reader = csv.reader(file)
+                    for row in reader:
+                        for index, entry in enumerate(row):
+                            row[index] = re.sub(r'\s', r' ', entry)
+                        twriter.writerow(row)
+                with open(filepath, 'w', newline='') as file:
+                    tempfile.seek(0)
+                    writer = csv.writer(file)
+                    writer.writerows(treader)
+        elif filetype == 'flat':
+            with tf.TemporaryFile('w+') as tempfile:
+                with open(filepath) as file:
+                    for line in file.readlines():
+                        end = re.search(r'[\n\r]+$', line)
+                        if end:
+                            line = line.rstrip(end[0])
+                        line = re.sub(r'\s', r' ', line)
+                        if end:
+                            line += end[0]
+                        tempfile.write(line)
+                with open(filepath, 'w') as file:
+                    tempfile.seek(0)
+                    file.write(tempfile.read())
+        return None
+
+
 def strip_csv(filetype, filepath):
     try:
         if filetype.lower() != 'csv':
@@ -149,7 +201,6 @@ def write_audit(rows, mode='a', header=False):
         print(str(e))
     else:
         return None
-        
 
 
 def email_audit(filetype, filepath, email_indices, audit_mode='a', audit_header=False):
@@ -384,6 +435,10 @@ def layout_audit(layout_name, filepath):
             print('Definition found. Parsing file...')
             audit_mode = 'w'
             audit_header = True
+            clean_whitespace(
+                file_layout.filetype,
+                filepath
+            )
             if file_layout.filetype == 'csv':
                 strip_csv(
                     file_layout.filetype,
