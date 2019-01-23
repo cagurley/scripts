@@ -48,6 +48,39 @@ patch_worksheet()
 # Patch end
 
 
+def date_sub(date_values, string):
+    try:
+        if (not hasattr(date_values, '__iter__')
+                or len(date_values) != 3
+                or not re.match(r'\d{2}', date_values[0])
+                or not re.match(r'\d{2}', date_values[1])
+                or not re.match(r'\d{4}', date_values[2])):
+            raise FormatError("Must provide an iterable of three digit-only text values in the form of ('MM', 'DD', 'YYYY').")
+        if not isinstance(string, str):
+            raise TypeError('Must provide string for substitution.')
+    except (FormatError, TypeError) as e:
+        print(str(e))
+        raise e
+    else:
+        return (string.replace('MM', date_values[0])
+                .replace('DD', date_values[1])
+                .replace('YYYY', date_values[2]))
+
+
+def dupe_compare_raw(set_with_raw, primary_key, other_with_raw, other_key):
+    primary_values = []
+    other_values = []
+    dupes = set()
+    for row in set_with_raw.raw_data:
+        primary_values.append(row[primary_key])
+    for row in other_with_raw.raw_data:
+        other_values.append(row[other_key])
+    for pvalue in primary_values:
+        if pvalue in other_values:
+            dupes.add(pvalue)
+    return dupes
+
+
 def split_datestring(datestring):
     try:
         datestring = str(datestring.lower())
@@ -56,12 +89,18 @@ def split_datestring(datestring):
         if re.match(r'\d{2}/\d{2}/\d{4}', datestring):
             return datestring.split('/')
         else:
-            raise ValueError("Enter date as 'MM/DD/YYYY' or the word 'now'.")
-    except ValueError as e:
+            raise FormatError("Enter date as 'MM/DD/YYYY' or the word 'now'.")
+    except FormatError as e:
         print(str(e))
+        raise e
 
 
-class csv_dataset:
+class FormatError(Exception):
+    def __init__(self, message):
+        super().__init__(message)
+
+
+class CSVDataset:
     def __init__(self, filepath):
         self.filepath = filepath
         self.raw_data = []
@@ -97,6 +136,18 @@ class csv_dataset:
                 dwriter.writeheader()
                 dwriter.writerows(self.raw_data)
         return None
+    
+    
+    def dupe_scan_raw(self, primary_key):
+        primary_values = []
+        dupes = set()
+        for row in self.raw_data:
+            primary_values.append(row[primary_key])
+        for value in primary_values:
+            if primary_values.count(value) > 1:
+                dupes.add(value)
+        return dupes
+    
 
     def lookup_from_minor_raw(self, xlsx_minor_set, self_key, match_key,
                               header='', found='', not_found='', return_key=None):
@@ -144,7 +195,7 @@ class csv_dataset:
         return None
 
 
-class xlsx_minor_set:
+class XLSXMinorSet:
     def __init__(self, filepath):
         self.filepath = filepath
         self.raw_data = []

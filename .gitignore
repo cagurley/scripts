@@ -2,6 +2,7 @@
 *temp*
 *__pycache__*
 *.csv
+*.ini
 *.txt
 *.xlsx
 *.xls
