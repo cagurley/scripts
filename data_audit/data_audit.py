@@ -257,8 +257,8 @@ def email_audit(filetype, filepath, email_indices, audit_mode='a', audit_header=
                         if domain[1] in EXPLICIT_DOMAINS:
                             continue
                         else:
-                            county_check = re.match(r'stu\.(.+?)\.kyschools\.us$', domain[1])
-                            if county_check and county_check[1] in VALID_DISTRICTS:
+                            county_check = re.match(r'(stu\.)?(.+?)\.kyschools\.us$', domain[1])
+                            if county_check and county_check[2] in VALID_DISTRICTS:
                                 continue
                     audit_rows.append((index + 1, email, 'EMAIL', 'Domain Error'))
             write_audit(audit_rows, audit_mode, audit_header)
