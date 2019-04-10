@@ -180,7 +180,7 @@ def strip_csv(filetype, filepath):
                 reader = csv.reader(file)
                 for row in reader:
                     for index, entry in enumerate(row):
-                        row[index] = entry.strip()
+                        row[index] = entry.strip().strip(',')
                     twriter.writerow(row)
             with open(filepath, 'w', newline='') as file:
                 tempfile.seek(0)
