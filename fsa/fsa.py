@@ -6,22 +6,113 @@ Created on Mon Apr  8 13:51:10 2019
 """
 
 import csv
+import datetime as dt
 import pysftp
 
 
-def append_path(path):
-    paths.append(path)
-    return None
+class ConnDirectives:
+    def __init__(self, ref, protocol, host, username, password, port):
+        self.ref = ref
+        self.protocol = protocol
+        self.host = host
+        self.username = username
+        self.password = password
+        self.port = port
+        self.ops = []
+        self.access_time = None
+        self.previous_time = None
+        self.set_prev_time
+
+    def add_op(self, op):
+        if op.conn_ref == self.ref:
+            self.ops.append(op)
+        return None
+
+    def cycle_times(self):
+        if self.access_time:
+            rows = []
+            with open('ref/TIMES.csv') as file:
+                reader = csv.reader(file)
+                for row in reader:
+                    rows.append(row)
+            for index, row in enumerate(rows):
+                if len(row) != 2 or row[0] == self.ref:
+                    rows.pop(index)
+            rows.append([self.ref, self.access_time])
+            self.previous_time = self.access_time
+            self.access_time = None
+            with open('ref/TIMES.csv', 'w') as file:
+                writer = csv.writer(file)
+                writer.writerows(rows)
+        return None
+
+    def set_access_time(self):
+        self.access_time = dt.datetime.today()
+        return None
+
+    def set_prev_time(self):
+        with open('ref/TIMES.csv') as file:
+            reader = csv.reader(file)
+            for row in reader:
+                if len(row) == 2 and row[0] == self.ref:
+                    try:
+                        self.previous_time = dt.datetime.strptime(row[1], '%c')
+                        return None
+                    except ValueError:
+                        self.previous_time = dt.datetime.today()
+            self.previous_time = dt.datetime.today()
+            return None
+
+class OpDirectives:
+    def __init__(self, conn_ref, target_type, target_path, operation, *args):
+        self.conn_ref = conn_ref
+        self.target_type = target_type
+        self.target_path = target_path
+        self.operation = operation
+        self.args = [*args]
+
+    def validate(self):
+        if (self.target_type == 'dir'
+                and self.operation == 'rename_files'
+                and len(self.args) == 1):
+            return True
+        else:
+            return False
 
 
 def dummy(path):
     pass
 
 
-_connections = []
+### Command functions
+# Command selection
+def choose_func(conn, conndir, opdir):
+    funcname = (conndir.protocol + '_'
+                + opdir.target_type + '_'
+                + opdir.operation)
+    if funcname == 'sftp_dir_rename_files':
+        sftp_dir_rename_files(conn, opdir)
+    return None
+
+
+# SFTP commands
+def sftp_dir_rename_files(pysftp_conn, opdir):
+    paths = []
+    pysftp_conn.walktree('/outgoing/for_incoming',
+                         fcallback=paths.append,
+                         dcallback=dummy,
+                         ucallback=dummy,
+                         recurse=False)
+    for path in paths:
+        currdir, currname = path.rsplit('/', 1)
+        newpath = '/'.join([opdir.args[0], currname])
+        conn.rename(path, newpath)
+    return None
+
+
+_conndir = []
 _join = []
-_operations = []
-paths = []
+_opdir = []
 
 
 with open('./ref/CONNS.csv') as connfile:
@@ -39,11 +130,10 @@ with open('./ref/CONNS.csv') as connfile:
                 print('Invalid port number for row {}! Discarded!'.format(index + 1))
             else:
                 row[4] = int(row[4])
-                row.append(index + 1)
                 _join.append(index + 1)
-                _connections.append(row)
+                _conndir.append(ConnDirectives(index + 1, *row))
 with open('./ref/OPS.csv') as opfile:
-    reader = csv.reader(connfile)
+    reader = csv.reader(opfile)
     print('Examining operations...')
     for index, row in enumerate(reader):
         if len(row) < 4:
@@ -59,28 +149,35 @@ with open('./ref/OPS.csv') as opfile:
             if row[0] not in _join:
                 print('Cannot find referenced connection for row {}! Discarded!'.format(index + 1))
             else:
-                _operations.append(row)
+                opdir = OpDirectives(*row)
+                if not opdir.validate():
+                    print('Specified operation is invalid for row {}! Discarded!'.format(index + 1))
+                else:
+                    _opdir.append(opdir)
 
-if not _operations:
+if not _opdir:
     print('No valid operations found! Operation aborted!')
 else:
-    with pysftp.Connection(
-            host=_connections[0][1],
-            username=_connections[0][2],
-            password=_connections[0][3],
-            port=_connections[0][4]) as conn:
-#        print(conn.listdir('/outgoing/for_incoming'))
-        conn.walktree('/outgoing/for_incoming', fcallback=append_path, dcallback=dummy, ucallback=dummy)
-        for path in paths: 
-    if newname:
-        newpath = str.join(newdir, newname)
-        conn.rename(path, newpath)
-    else:
-        currdir, currname = path.rsplit('/', 1)
-        newpath = str.join(newdir, currname)
-        conn.rename(path, newpath)
-#        conn.rename('/outgoing/for_incoming/testy.txt', '/outgoing/for_incoming/testier.txt')
-#        print(conn.listdir())
-#        print(conn.pwd)
-#        print(conn.exists('/outgoing/for_incoming/test.txt'))
-#        print(conn.isfile('/outgoing/for_incoming/test.txt'))
+    for conndir in _conndir:
+        for index, opdir in enumerate(_opdir):
+            if conndir.ref == opdir.conn_ref:
+                conndir.add_op(opdir)
+                _opdir.pop(index)
+    for index, conndir in enumerate(_conndir):
+        if not conndir.ops:
+            _conndir.pop(index)
+
+    for conndir in _conndir:
+        try:
+            if conndir.protocol == 'sftp':
+                with pysftp.Connection(
+                        host=conndir.host,
+                        username=conndir.username,
+                        password=conndir.password,
+                        port=conndir.port) as conn:
+                    conndir.set_access_time()
+                    for opdir in conndir.ops:
+                        choose_func(conn, conndir, opdir)
+        except pysftp.SSHException:
+            print('SSH exception for host {} raised! Check for incorrect connection directives or missing key in `~./.ssh/known_hosts`.'.format(conndir.host))
+#print('hold')
