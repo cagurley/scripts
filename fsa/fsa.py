@@ -9,6 +9,7 @@ import csv
 import datetime as dt
 import os
 import pysftp
+import re
 from time import sleep
 
 
@@ -67,17 +68,23 @@ class ConnDirectives:
 
 
 class OpDirectives:
-    def __init__(self, conn_ref, target_type, target_path, operation, *args):
+    def __init__(self, conn_ref, target_type, target_path, operation, pattern, *args):
         self.conn_ref = conn_ref
         self.target_type = target_type
         self.target_path = target_path
         self.operation = operation
+        if pattern:
+            self.pattern = re.compile(pattern)
+        else:
+            self.pattern = None
         self.args = [*args]
 
     def validate(self):
         if (self.target_type == 'dir'
-                and self.operation in ('rename_files', 'copy_to', 'move_to')
-                and len(self.args) == 1):
+            and ((self.operation == 'rename_files'
+                  and len(self.args) == 1)
+                 or (self.operation in ('copy_to', 'move_to', 'copy_from', 'move_from')
+                     and len(self.args) == 2))):
             return True
         else:
             return False
@@ -99,19 +106,25 @@ def choose_func(conn, conndir, opdir):
         sftp_dir_copy_to(conn, conndir, opdir)
     elif funcname == 'sftp_dir_move_to':
         sftp_dir_move_to(conn, conndir, opdir)
+    elif funcname == 'sftp_dir_copy_from':
+        sftp_dir_copy_from(conn, conndir, opdir)
+    elif funcname == 'sftp_dir_move_from':
+        sftp_dir_move_from(conn, conndir, opdir)
     return None
 
 
 # SFTP commands
 def sftp_dir_rename_files(pysftp_conn, opdir):
     paths = []
-    pysftp_conn.walktree('/outgoing/for_incoming',
+    pysftp_conn.walktree(opdir.target_path,
                          fcallback=paths.append,
                          dcallback=dummy,
                          ucallback=dummy,
                          recurse=False)
     for path in paths:
         currdir, currname = path.rsplit('/', 1)
+        if opdir.pattern and not re.match(opdir.pattern, currname):
+            continue
         newpath = '/'.join([opdir.args[0], currname])
         conn.rename(path, newpath)
     return None
@@ -121,12 +134,17 @@ def sftp_dir_copy_to(pysftp_conn, conndir, opdir):
     files = []
     with os.scandir(opdir.args[0]) as local:
         for file in local:
-            fdt = dt.datetime.fromtimestamp(file.stat().st_ctime)
-            if fdt > conndir.previous_time and fdt <= conndir.access_time:
+            if opdir.pattern and not re.match(opdir.pattern, file.name):
+                continue
+            if opdir.args[1].lower() == 'yes':
+                fdt = dt.datetime.fromtimestamp(file.stat().st_ctime)
+                if fdt > conndir.previous_time and fdt <= conndir.access_time:
+                    files.append(file)
+            else:
                 files.append(file)
     for file in files:
         newpath = '/'.join([opdir.target_path, file.name])
-        pysftp_conn.put(file.path, newpath)
+        pysftp_conn.put(file.path, newpath, preserve_mtime=True)
     return files
 
 
@@ -134,6 +152,42 @@ def sftp_dir_move_to(pysftp_conn, conndir, opdir):
     files = sftp_dir_copy_to(pysftp_conn, conndir, opdir)
     for file in files:
         os.remove(file.path)
+    return None
+
+
+def sftp_dir_copy_from(pysftp_conn, conndir, opdir):
+    paths = []
+    matched_paths = []
+    pysftp_conn.walktree(opdir.target_path,
+                         fcallback=paths.append,
+                         dcallback=dummy,
+                         ucallback=dummy,
+                         recurse=False)
+    if opdir.pattern:
+        for path in paths:
+            currdir, currname = path.rsplit('/', 1)
+            if re.match(opdir.pattern, currname):
+                matched_paths.append(path)
+    else:
+        matched_paths = paths
+    if opdir.args[1].lower() == 'yes':
+        paths = matched_paths
+        matched_paths = []
+        for path in paths:
+            fdt = dt.datetime.fromtimestamp(pysftp_conn.stat(path).st_mtime)
+            if fdt > conndir.previous_time and fdt <= conndir.access_time:
+                matched_paths.append(path)
+    for path in matched_paths:
+        currdir, currname = path.rsplit('/', 1)
+        newpath = os.sep.join([opdir.args[0], currname])
+        conn.get(path, newpath, preserve_mtime=True)
+    return matched_paths
+
+
+def sftp_dir_move_from(pysftp_conn, conndir, opdir):
+    paths = sftp_dir_copy_from(pysftp_conn, conndir, opdir)
+    for path in paths:
+        pysftp_conn.remove(path)
     return None
 
 
@@ -169,7 +223,7 @@ try:
             reader = csv.reader(opfile)
             print('Examining operations...')
             for index, row in enumerate(reader):
-                if len(row) < 4:
+                if len(row) < 5:
                     print('Insufficient number of arguments for row {}! Discarded!'.format(index + 1))
                 elif not row[0].isdigit():
                     print('Invalid connection reference for row {}! Discarded!'.format(index + 1))
@@ -228,4 +282,3 @@ try:
             print('Operations have taken longer than 30 minutes to complete! Review directives or source.')
 except KeyboardInterrupt:
     print('Agent activity interrupted! Resume when ready.')
-#print('hold')
