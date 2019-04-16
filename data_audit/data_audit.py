@@ -106,11 +106,6 @@ FILE_LAYOUTS = [
         [15], '%m/%d/%Y'
     ),
     FileLayout(
-        'npc', 'csv',
-        [11],
-        [3, 4, 5], [3, 5]
-    ),
-    FileLayout(
         'gsp', 'csv',
         [14],
         [3, 4, 5], [3, 5]
@@ -119,6 +114,17 @@ FILE_LAYOUTS = [
         'gsa', 'csv',
         [4],
         [0, 1, 2, 3], [1, 0]
+    ),
+    FileLayout(
+        'npc', 'csv',
+        [11],
+        [3, 4, 5], [3, 5]
+    ),
+    FileLayout(
+        'ssc', 'csv',
+        [3],
+        [1, 2], [1, 2],
+        [11], '%Y-%m-%d'
     ),
     FileLayout(
         'vis', 'csv',
