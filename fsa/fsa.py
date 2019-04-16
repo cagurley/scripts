@@ -94,6 +94,15 @@ def dummy(path):
     pass
 
 
+def log(line):
+    try:
+        with open('fsa.log', 'a') as log:
+            line += '\n'
+            log.write(line)
+    except IOError:
+        print('LOG FILE SHOULD NOT BE IN USE WHILE AGENT IS RUNNING. OPERATION HAS NOT BEEN LOGGED. TERMINATE AGENT BEFORE VIEWING.')
+
+
 ### Command functions
 # Command selection
 def choose_func(conn, conndir, opdir):
@@ -127,6 +136,7 @@ def sftp_dir_rename_files(pysftp_conn, opdir):
             continue
         newpath = '/'.join([opdir.args[0], currname])
         conn.rename(path, newpath)
+        log("File '{}' on host renamed to '{}'".format(path, newpath))
     return None
 
 
@@ -145,6 +155,7 @@ def sftp_dir_copy_to(pysftp_conn, conndir, opdir):
     for file in files:
         newpath = '/'.join([opdir.target_path, file.name])
         pysftp_conn.put(file.path, newpath, preserve_mtime=True)
+        log("Local file '{}' copied to '{}' on host".format(file.path, newpath))
     return files
 
 
@@ -152,6 +163,7 @@ def sftp_dir_move_to(pysftp_conn, conndir, opdir):
     files = sftp_dir_copy_to(pysftp_conn, conndir, opdir)
     for file in files:
         os.remove(file.path)
+        log("Remaining local file '{}' deleted".format(file.path))
     return None
 
 
@@ -181,6 +193,7 @@ def sftp_dir_copy_from(pysftp_conn, conndir, opdir):
         currdir, currname = path.rsplit('/', 1)
         newpath = os.sep.join([opdir.args[0], currname])
         conn.get(path, newpath, preserve_mtime=True)
+        log("File '{}' on host copied to '{}' locally".format(path, newpath))
     return matched_paths
 
 
@@ -188,12 +201,14 @@ def sftp_dir_move_from(pysftp_conn, conndir, opdir):
     paths = sftp_dir_copy_from(pysftp_conn, conndir, opdir)
     for path in paths:
         pysftp_conn.remove(path)
+        log("Remaining file '{}' on host deleted".format(path))
     return None
 
 
 # Main try clause for infinite loop
 # Should be terminated with keyboard interrupt
 try:
+    log('Agent booted from disk at {}'.format(str(dt.datetime.now())))
     while True:
         _conndir = []
         _join = []
@@ -201,7 +216,8 @@ try:
         start = dt.datetime.now()
         next_start = start + dt.timedelta(minutes=30)
 
-        print('Scanning initiated! Timestamp: {}'.format(str(start)))
+        log('Cycle started at {}'.format(str(start)))
+        print('\nScanning initiated! Timestamp: {}'.format(str(start)))
         with open('./ref/CONNS.csv', newline='') as connfile:
             reader = csv.reader(connfile)
             print('Examining connections...')
@@ -265,11 +281,13 @@ try:
                                 password=conndir.password,
                                 port=conndir.port) as conn:
                             conndir.set_access_time()
+                            log("Connection with host '{}' established at {}".format(conndir.host, conndir.access_time))
                             for opdir in conndir.ops:
                                 choose_func(conn, conndir, opdir)
+                            log("Connection with host '{}' terminated at {}".format(conndir.host, str(dt.datetime.now())))
                     conndir.cycle_times()
                 except pysftp.SSHException:
-                    # Note that this doesn't handle subsequent AttirubteError
+                    # Note that this doesn't handle subsequent AttributeError
                     # thrown by context manager. Needs future fix.
                     print('SSH exception for host {} raised! Check for incorrect connection directives or missing key in `~./.ssh/known_hosts`.'.format(conndir.host))
                     continue
@@ -277,8 +295,10 @@ try:
         sleep_interval = (next_start - dt.datetime.now()).seconds
         if sleep_interval > 0:
             print('Operations completed! Next scan will initiate at {}.'.format(str(next_start)))
+            log('Cycle ended and sleep begun at {}'.format(str(dt.datetime.now())))
             sleep(sleep_interval)
         else:
             print('Operations have taken longer than 30 minutes to complete! Review directives or source.')
 except KeyboardInterrupt:
+    log('Agent terminated via keyboard interrupt at {}'.format(str(dt.datetime.now())))
     print('Agent activity interrupted! Resume when ready.')
