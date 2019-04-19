@@ -59,7 +59,7 @@ followed by today's date (Y/n)? """)
                         for (index, entry) in enumerate(sd):
                             if (entry.name not in (filename, 'merge.py')
                                     and entry.is_file()
-                                    and entry.name.rsplit('.', 1)[1] != 'exe'):
+                                    and not entry.name.endswith('.exe')):
                                 with open(entry.path, 'rb') as file:
                                     if skip_headers and (not retain_one or index > 0):
                                         counter = 0
