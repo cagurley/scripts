@@ -154,6 +154,9 @@ def sftp_dir_copy_to(pysftp_conn, conndir, opdir):
                 files.append(file)
     for file in files:
         newpath = '/'.join([opdir.target_path, file.name])
+        if pysftp_conn.exists(newpath):
+            pysftp_conn.remove(newpath)
+            log("File {} already existing on host was deleted".format(newpath))
         pysftp_conn.put(file.path, newpath, preserve_mtime=True)
         log("Local file '{}' copied to '{}' on host".format(file.path, newpath))
     return files
