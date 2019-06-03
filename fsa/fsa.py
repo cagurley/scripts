@@ -302,6 +302,10 @@ try:
             sleep(sleep_interval)
         else:
             print('Operations have taken longer than 30 minutes to complete! Review directives or source.')
+        if os.name == 'nt':
+            os.system('cls')
+        else:
+            os.system('clear')
 except KeyboardInterrupt:
     log('Agent terminated via keyboard interrupt at {}'.format(str(dt.datetime.now())))
     print('Agent activity interrupted! Resume when ready.')
