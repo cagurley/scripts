@@ -255,7 +255,7 @@ def email_audit(filetype, filepath, email_indices, audit_mode='a', audit_header=
                     elif re.search(r'\s', email):
                         audit_rows.append((index + 1, email, 'EMAIL', 'Whitespace Error'))
                         continue
-                    elif not re.match(r"[\d\w!#$%&'*+-/=?^`{|}~]+(\.[\d\w!#$%&'*+-/=?^`{|}~]+)*@(?!-)[-\da-zA-Z]+(?<!-)(\.(?!-)[-\da-zA-Z]+(?<!-))+$", email, re.A):
+                    elif not re.match(r"[\d\w!#$%&'*+\-/=?^`{|}~]+(\.[\d\w!#$%&'*+\-/=?^`{|}~]+)*@(?!-)[\-\da-zA-Z]+(?<!-)(\.(?!-)[\-\da-zA-Z]+(?<!-))+$", email, re.A):
                         audit_rows.append((index + 1, email, 'EMAIL', 'Malformation Error'))
                         continue
                     domain = re.search(r'@(.+)$', email.lower())
