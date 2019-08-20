@@ -10,6 +10,7 @@ import datetime as dt
 import os
 import pysftp
 import re
+import shutil
 from time import sleep
 
 
@@ -80,11 +81,14 @@ class OpDirectives:
         self.args = [*args]
 
     def validate(self):
-        if (self.target_type == 'dir'
-            and ((self.operation == 'rename_files'
-                  and len(self.args) == 1)
-                 or (self.operation in ('copy_to', 'move_to', 'copy_from', 'move_from')
-                     and len(self.args) == 2))):
+        if ((self.target_type == 'dir'
+                and ((self.operation == 'rename_files'
+                        and len(self.args) == 1)
+                    or (self.operation in ('copy_to', 'move_to', 'copy_from', 'move_from')
+                        and len(self.args) == 2)))
+            or (self.target_type == 'file'
+                and self.operation == 'ren_copy'
+                and len(self.args) == 2)):
             return True
         else:
             return False
@@ -109,6 +113,8 @@ def choose_func(conn, conndir, opdir):
     funcname = (conndir.protocol + '_'
                 + opdir.target_type + '_'
                 + opdir.operation)
+    if funcname == 'local_file_ren_copy':
+        local_file_ren_copy(conndir, opdir)
     if funcname == 'sftp_dir_rename_files':
         sftp_dir_rename_files(conn, opdir)
     elif funcname == 'sftp_dir_copy_to':
@@ -119,6 +125,28 @@ def choose_func(conn, conndir, opdir):
         sftp_dir_copy_from(conn, conndir, opdir)
     elif funcname == 'sftp_dir_move_from':
         sftp_dir_move_from(conn, conndir, opdir)
+    return None
+
+
+# Local commands
+def local_file_ren_copy(conndir, opdir):
+    local_file = None
+    with os.scandir(opdir.target_path) as local:
+        for file in local:
+            if opdir.pattern and not re.match(opdir.pattern, file.name):
+                continue
+            else:
+                fdt = dt.datetime.fromtimestamp(file.stat().st_ctime)
+                if (fdt > conndir.previous_time and fdt <= conndir.access_time):
+                    if opdir.args[1].lower() == 'yes':
+                        if (not local_file
+                                or fdt > dt.datetime.fromtimestamp(local_file.stat().st_ctime)):
+                            local_file = file
+                    else:
+                        local_file = file
+    if local_file:
+        shutil.copy(local_file, opdir.args[0])
+        log("Local file '{}' copied to '{}' locally".format(file.path, opdir.args[0]))
     return None
 
 
@@ -230,7 +258,7 @@ try:
                 else:
                     row[0] = row[0].lower()
                     row[1] = row[1].lower()
-                    if row[0] not in ('scp', 'sftp'):
+                    if row[0] not in ('local', 'sftp'):
                         print('Invalid protocol for row {}! Discarded!'.format(index + 1))
                     elif not row[4].isdigit():
                         print('Invalid port number for row {}! Discarded!'.format(index + 1))
@@ -288,6 +316,12 @@ try:
                             for opdir in conndir.ops:
                                 choose_func(conn, conndir, opdir)
                             log("Connection with host '{}' terminated at {}".format(conndir.host, str(dt.datetime.now())))
+                    elif conndir.protocol == 'local':
+                            conndir.set_access_time()
+                            log("Local host operations begun at at {}".format(conndir.access_time))
+                            for opdir in conndir.ops:
+                                choose_func(conn, conndir, opdir)
+                            log("Local host operations completed at {}".format(str(dt.datetime.now())))
                     conndir.cycle_times()
                 except pysftp.SSHException:
                     # Note that this doesn't handle subsequent AttributeError
