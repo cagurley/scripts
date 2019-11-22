@@ -146,7 +146,7 @@ def local_file_ren_copy(conndir, opdir):
                         local_file = file
     if local_file:
         shutil.copy(local_file, opdir.args[0])
-        log("Local file '{}' copied to '{}' locally".format(file.path, opdir.args[0]))
+        log("Local file '{}' copied to '{}' locally".format(local_file.path, opdir.args[0]))
     return None
 
 
