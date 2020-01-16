@@ -2,6 +2,7 @@
 *temp*
 *__pycache__*
 *.csv
+*.db
 *.ini
 *.json
 *.log
