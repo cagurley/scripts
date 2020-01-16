@@ -3,6 +3,7 @@
 *__pycache__*
 *.csv
 *.ini
+*.json
 *.log
 *.txt
 *.xls
