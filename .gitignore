@@ -1,11 +1,14 @@
 *test*
 *temp*
 *__pycache__*
+*build*
+*dist*
 *.csv
 *.db
 *.ini
 *.json
 *.log
+*.spec
 *.txt
 *.xls
 *.xlsx

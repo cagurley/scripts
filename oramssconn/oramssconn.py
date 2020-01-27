@@ -8,6 +8,7 @@ Created on Fri Nov  8 10:58:37 2019
 import csv
 import cx_Oracle as cxo
 import json
+import os
 import pyodbc
 import sqlite3
 
@@ -15,6 +16,9 @@ import sqlite3
 def validate_keys(srcdict, keys=tuple()):
     for key in keys:
         if key not in srcdict:
+            return False
+    for key in srcdict:
+        if key not in keys:
             return False
     return True
 
@@ -72,13 +76,14 @@ try:
                                'host',
                                'port',
                                'service_name'))
-            and 'oracle' in qvars
+            and validate_keys(qvars, ('oracle',))
             and validate_keys(qvars['oracle'], ('termlb', 'termub'))):
         lconn = sqlite3.connect('temp.db')
 
         # Setup local database
         lcur = lconn.cursor()
         lcur.execute('DROP TABLE IF EXISTS orabase')
+        lcur.execute('DROP TABLE IF EXISTS oraaux')
         lcur.execute('DROP TABLE IF EXISTS mssbase')
         lcur.execute('DROP TABLE IF EXISTS oraref1')
         lcur.execute('DROP TABLE IF EXISTS oraref2')
@@ -87,13 +92,43 @@ try:
         lcur.execute("""CREATE TABLE orabase (
   emplid text,
   adm_appl_nbr text,
-  admit_type,
-  academic_level,
-  admit_term,
+  admit_type text,
+  academic_level text,
+  admit_term text,
   acad_prog text,
   acad_plan text,
   prog_action text,
   prog_reason text)""")
+        lcur.execute("""CREATE TABLE oraaux (
+  emplid text,
+  acad_career text,
+  stdnt_car_nbr int,
+  adm_appl_nbr text,
+  appl_prog_nbr int,
+  effdt text,
+  effseq int,
+  institution text,
+  acad_prog text,
+  prog_status text,
+  prog_action text,
+  action_dt text,
+  prog_reason text,
+  admit_term text,
+  exp_grad_term text,
+  req_term text,
+  acad_load_appr text,
+  campus text,
+  acad_prog_dual text,
+  joint_prog_appr text,
+  ssr_rs_candit_nbr text,
+  ssr_apt_instance int,
+  ssr_yr_of_prog text,
+  ssr_shift text,
+  ssr_cohort_id text,
+  scc_row_add_oprid text,
+  scc_row_add_dttm text,
+  scc_row_upd_oprid text,
+  scc_row_upd_dttm text)""")
         lcur.execute("""CREATE TABLE mssbase (
   emplid text,
   adm_appl_nbr text,
@@ -109,6 +144,7 @@ try:
         lcur.execute('CREATE TABLE oraref3 (prog_action text unique, rank int)')
         lconn.commit()
         lcur.execute('CREATE INDEX orab ON orabase (emplid, adm_appl_nbr)')
+        lcur.execute('CREATE INDEX orax ON oraaux (emplid, adm_appl_nbr)')
         lcur.execute('CREATE INDEX ssb ON mssbase (emplid, adm_appl_nbr)')
         lcur.execute('CREATE INDEX orar1 ON oraref1 (acad_prog, acad_plan)')
         lcur.execute('CREATE INDEX orar2 ON oraref2 (prog_action, prog_reason)')
@@ -148,10 +184,11 @@ try:
   (select top 1 [value] from dbo.getFieldExportTable(a.[id], 'prog_reason')) as [PROG_REASON]
 from [application] a
 inner join [person] p on p.[id] = a.[person]
-left outer join [lookup.round] r on r.[id] = a.[round]
+inner join [lookup.round] lr on lr.[id] = a.[round]
 where p.[id] not in (select [record] from [tag] where ([tag] in ('test')))
-and isnull(r.[key], '') = 'UG'
+and isnull(lr.[key], '') = 'UG'
 and a.[submitted] is not null
+and lr.[active] = 1
 order by 1, 2""")
                 fc = 0
                 while True:
@@ -195,6 +232,39 @@ ORDER BY A.EMPLID, A.ADM_APPL_NBR""", qvars['oracle'])
                         print(f'\nFetched and inserted {cur.rowcount} total rows.\n\n')
                         break
                     lcur.executemany('INSERT INTO orabase VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', rows)
+                    lconn.commit()
+                    print(f'Fetched and inserted from row {fc*500 + 1}...')
+                    fc += 1
+                cur.execute("""SELECT A.*
+FROM PS_ADM_APPL_PROG A
+WHERE A.ADMIT_TERM BETWEEN :termlb AND :termub
+AND A.ACAD_CAREER = 'UGRD'
+AND A.EFFDT = (
+  SELECT MAX(A_ED.EFFDT)
+  FROM PS_ADM_APPL_PROG A_ED
+  WHERE A.EMPLID = A_ED.EMPLID
+  AND A.ACAD_CAREER = A_ED.ACAD_CAREER
+  AND A.STDNT_CAR_NBR = A_ED.STDNT_CAR_NBR
+  AND A.ADM_APPL_NBR = A_ED.ADM_APPL_NBR
+  AND A.APPL_PROG_NBR = A_ED.APPL_PROG_NBR
+) AND A.EFFSEQ = (
+  SELECT MAX(A_ED.EFFSEQ)
+  FROM PS_ADM_APPL_PROG A_ED
+  WHERE A.EMPLID = A_ED.EMPLID
+  AND A.ACAD_CAREER = A_ED.ACAD_CAREER
+  AND A.STDNT_CAR_NBR = A_ED.STDNT_CAR_NBR
+  AND A.ADM_APPL_NBR = A_ED.ADM_APPL_NBR
+  AND A.APPL_PROG_NBR = A_ED.APPL_PROG_NBR
+  AND A.EFFDT = A_ED.EFFDT
+)
+ORDER BY A.EMPLID, A.ADM_APPL_NBR""", qvars['oracle'])
+                fc = 0
+                while True:
+                    rows = cur.fetchmany(500)
+                    if not rows:
+                        print(f'\nFetched and inserted {cur.rowcount} total rows.\n\n')
+                        break
+                    lcur.executemany('INSERT INTO oraaux VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', rows)
                     lconn.commit()
                     print(f'Fetched and inserted from row {fc*500 + 1}...')
                     fc += 1
@@ -281,7 +351,8 @@ WHERE NOT EXISTS (
   FROM oraref1 as orr1
   WHERE msb.acad_prog = orr1.acad_prog
   AND msb.acad_plan = orr1.acad_plan
-)"""
+)
+ORDER BY 1, 2"""
         iarc = """SELECT *
 FROM mssbase as msb
 INNER JOIN orabase as orb on msb.emplid = orb.emplid and msb.adm_appl_nbr = orb.adm_appl_nbr
@@ -290,14 +361,31 @@ WHERE NOT EXISTS (
   FROM oraref2 as orr2
   WHERE msb.prog_action = orr2.prog_action
   AND msb.prog_reason = orr2.prog_reason
-)"""
+)
+ORDER BY 1, 2"""
         iau = """SELECT msb.*, orb.*
 FROM mssbase as msb
 INNER JOIN oraref3 as msborr3 on msb.prog_action = msborr3.prog_action
 INNER JOIN orabase as orb on msb.emplid = orb.emplid and msb.adm_appl_nbr = orb.adm_appl_nbr
 INNER JOIN oraref3 as orborr3 on orb.prog_action = orborr3.prog_action
 WHERE msb.prog_action != orb.prog_action
-AND msborr3.rank <= orborr3.rank"""
+AND msborr3.rank <= orborr3.rank
+ORDER BY 1, 2"""
+        cla = """SELECT *
+FROM mssbase as msb
+INNER JOIN orabase as orb on msb.emplid = orb.emplid and msb.adm_appl_nbr = orb.adm_appl_nbr
+INNER JOIN oraref3 as orr3 on orb.prog_action = orr3.prog_action
+WHERE orr3.rank = 3
+AND (
+  orb.admit_type != msb.admit_type
+  OR orb.academic_level != msb.academic_level
+  OR orb.admit_term != msb.admit_term
+  OR orb.acad_prog != msb.acad_prog
+  OR orb.acad_plan != msb.acad_plan
+  OR orb.prog_action != msb.prog_action
+  OR orb.prog_reason != msb.prog_reason
+)
+ORDER BY 1, 2"""
         ui = """
   SELECT umsb.adm_appl_nbr
   FROM mssbase as umsb
@@ -326,21 +414,38 @@ AND msborr3.rank <= orborr3.rank"""
   INNER JOIN oraref3 as uorborr3 on uorb.prog_action = uorborr3.prog_action
   WHERE umsb.prog_action != uorb.prog_action
   AND umsborr3.rank <= uorborr3.rank
+  UNION
+  SELECT umsb.adm_appl_nbr
+  FROM mssbase as umsb
+  INNER JOIN orabase as uorb on umsb.emplid = uorb.emplid and umsb.adm_appl_nbr = uorb.adm_appl_nbr
+  INNER JOIN oraref3 as uorr3 on uorb.prog_action = uorr3.prog_action
+  WHERE uorr3.rank = 3
+  AND (
+    uorb.admit_type != umsb.admit_type
+    OR uorb.academic_level != umsb.academic_level
+    OR uorb.admit_term != umsb.admit_term
+    OR uorb.acad_prog != umsb.acad_prog
+    OR uorb.acad_plan != umsb.acad_plan
+    OR uorb.prog_action != umsb.prog_action
+    OR uorb.prog_reason != umsb.prog_reason
+  )
 """
 
-        lcur.execute(ippc + '\nORDER BY 1, 2')
+        lcur.execute(ippc)
         query_to_csv('INVALID_PP_COMBO.csv', lcur)
-        lcur.execute(iarc + '\nORDER BY 1, 2')
+        lcur.execute(iarc)
         query_to_csv('INVALID_AR_COMBO.csv', lcur)
-        lcur.execute(iau + '\nORDER BY 1, 2')
+        lcur.execute(iau)
         query_to_csv('INVALID_ACTION_UPDATE.csv', lcur)
+        lcur.execute(cla)
+        query_to_csv('CHANGES_TO_LOCKED_APPLICATIONS.csv', lcur)
 
         lcur.execute("""SELECT *
 FROM mssbase as msb
 INNER JOIN orabase as orb on msb.emplid = orb.emplid and msb.adm_appl_nbr = orb.adm_appl_nbr
 WHERE msb.adm_appl_nbr NOT IN (""" + ui + """) AND msb.admit_type != orb.admit_type
 ORDER BY 1, 2""")
-        ldata = query_to_csv('BAD_TYPE.csv', lcur, [0, 1, 2])
+        ldata = query_to_csv('TYPE_CHANGE.csv', lcur, [0, 1, 2])
         if ldata:
             excerpts = ['', '', '']
             for row in ldata:
@@ -361,7 +466,7 @@ FROM mssbase as msb
 INNER JOIN orabase as orb on msb.emplid = orb.emplid and msb.adm_appl_nbr = orb.adm_appl_nbr
 WHERE msb.adm_appl_nbr NOT IN (""" + ui + """) AND msb.academic_level != orb.academic_level
 ORDER BY 1, 2""")
-        ldata = query_to_csv('BAD_LEVEL.csv', lcur, [0, 1, 3])
+        ldata = query_to_csv('LEVEL_CHANGE.csv', lcur, [0, 1, 3])
         if ldata:
             excerpts = ['', '', '']
             for row in ldata:
@@ -382,7 +487,7 @@ FROM mssbase as msb
 INNER JOIN orabase as orb on msb.emplid = orb.emplid and msb.adm_appl_nbr = orb.adm_appl_nbr
 WHERE msb.adm_appl_nbr NOT IN (""" + ui + """) AND msb.admit_term != orb.admit_term
 ORDER BY 1, 2""")
-        ldata = query_to_csv('BAD_TERM.csv', lcur, [0, 1, 4])
+        ldata = query_to_csv('TERM_CHANGE.csv', lcur, [0, 1, 4])
         if ldata:
             excerpts = ['', '', '']
             for row in ldata:
@@ -403,7 +508,7 @@ FROM mssbase as msb
 INNER JOIN orabase as orb on msb.emplid = orb.emplid and msb.adm_appl_nbr = orb.adm_appl_nbr
 WHERE msb.adm_appl_nbr NOT IN (""" + ui + """) AND msb.acad_prog != orb.acad_prog
 ORDER BY 1, 2""")
-        ldata = query_to_csv('BAD_PROG.csv', lcur, [0, 1, 5])
+        ldata = query_to_csv('PROG_CHANGE.csv', lcur, [0, 1, 5])
         if ldata:
             excerpts = ['', '', '']
             for row in ldata:
@@ -424,7 +529,7 @@ FROM mssbase as msb
 INNER JOIN orabase as orb on msb.emplid = orb.emplid and msb.adm_appl_nbr = orb.adm_appl_nbr
 WHERE msb.adm_appl_nbr NOT IN (""" + ui + """) AND msb.acad_plan != orb.acad_plan
 ORDER BY 1, 2""")
-        ldata = query_to_csv('BAD_PLAN.csv', lcur, [0, 1, 6])
+        ldata = query_to_csv('PLAN_CHANGE.csv', lcur, [0, 1, 6])
         if ldata:
             excerpts = ['', '', '']
             for row in ldata:
@@ -452,6 +557,15 @@ INNER JOIN orabase as orb on msb.emplid = orb.emplid and msb.adm_appl_nbr = orb.
 WHERE msb.adm_appl_nbr NOT IN (""" + ui + """) AND msb.prog_reason != orb.prog_reason
 ORDER BY 1, 2""")
         query_to_csv('BAD_REASON.csv', lcur)
+
+        # Cleanup local database
+#        lcur.execute('DROP TABLE IF EXISTS orabase')
+#        lcur.execute('DROP TABLE IF EXISTS oraaux')
+#        lcur.execute('DROP TABLE IF EXISTS mssbase')
+#        lcur.execute('DROP TABLE IF EXISTS oraref1')
+#        lcur.execute('DROP TABLE IF EXISTS oraref2')
+#        lcur.execute('DROP TABLE IF EXISTS oraref3')
+#        lconn.commit()
     else:
         print('Missing keys in JSON files; check for proper formation.')
 except (OSError, json.JSONDecodeError, cxo.Error, pyodbc.DatabaseError, sqlite3.DatabaseError) as e:
@@ -460,3 +574,4 @@ finally:
     lconn.rollback()
     lcur.close()
     lconn.close()
+#    os.remove('./temp.db')
