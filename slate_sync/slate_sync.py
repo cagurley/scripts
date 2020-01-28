@@ -80,7 +80,7 @@ def query_to_csv(filename, cursor, return_indices=None):
     return return_data
 
 
-def query_to_update(update_filename, update_target, csv_filename, cursor, index_triplet):
+def query_to_update(update_filename, update_target, update_metadata, csv_filename, cursor, index_triplet):
     """The update_target argument should be a two-tuple of strings
     wherein the first argument is the name of the table to be updated
     and the second argument is the name of the column to be updated;
@@ -88,7 +88,7 @@ def query_to_update(update_filename, update_target, csv_filename, cursor, index_
     wherein the first refers to the relevant emplid column,
     the second refers to the relevant adm_appl_nbr column,
     and the third references the column of update source values."""
-    if len(update_target) == 2 and len(index_triplet) == 3:
+    if len(update_target) == 2 and len(update_metadata) == 4 and len(index_triplet) == 3:
         data = query_to_csv(csv_filename, cursor, index_triplet)
         if data:
             stmt_groups = []
@@ -107,10 +107,10 @@ def query_to_update(update_filename, update_target, csv_filename, cursor, index_
             with open(update_filename, 'w') as file:
                 for row in stmt_groups:
                     file.write("""UPDATE {}
-SET {} = DECODE(ADM_APPL_NBR, {})
+SET SCC_ROW_ADD_OPRID = {}, SCC_ROW_ADD_DTTM = {}, SCC_ROW_UPD_OPRID = {}, SCC_ROW_UPD_DTTM = {}, {} = DECODE(ADM_APPL_NBR, {})
 WHERE EMPLID IN ({})
 AND ADM_APPL_NBR = DECODE(EMPLID, {});
-""".format(*update_target, *row))
+""".format(update_target[0], *update_metadata, update_target[1], *row))
     return None
 
 
@@ -404,6 +404,9 @@ ORDER BY 1, 2""")
                         fc += 1
     
             # Query local database
+            row_metauser = '\'slate_sync - ' + connop['oracle']['user'].upper() + '\''
+            row_metadttm = 'SYSDATE'
+            row_metadata = (row_metauser, row_metadttm, row_metauser, row_metadttm)
             ippc = """SELECT *
 FROM mssbase as msb
 INNER JOIN orabase as orb on msb.emplid = orb.emplid and msb.adm_appl_nbr = orb.adm_appl_nbr
@@ -508,6 +511,7 @@ WHERE msb.adm_appl_nbr NOT IN (""" + ui + """) AND msb.admit_type != orb.admit_t
 ORDER BY 1, 2""")
             query_to_update('update_type.txt',
                             ('PS_ADM_APPL_DATA', 'ADMIT_TYPE'),
+                            row_metadata,
                             'TYPE_CHANGE.csv',
                             lcur,
                             [0, 1, 2])
@@ -518,6 +522,7 @@ WHERE msb.adm_appl_nbr NOT IN (""" + ui + """) AND msb.academic_level != orb.aca
 ORDER BY 1, 2""")
             query_to_update('update_level.txt',
                             ('PS_ADM_APPL_DATA', 'ACADEMIC_LEVEL'),
+                            row_metadata,
                             'LEVEL_CHANGE.csv',
                             lcur,
                             [0, 1, 3])
@@ -528,6 +533,7 @@ WHERE msb.adm_appl_nbr NOT IN (""" + ui + """) AND msb.admit_term != orb.admit_t
 ORDER BY 1, 2""")
             query_to_update('update_term.txt',
                             ('PS_ADM_APPL_PROG', 'ADMIT_TERM'),
+                            row_metadata,
                             'TERM_CHANGE.csv',
                             lcur,
                             [0, 1, 4])
@@ -538,6 +544,7 @@ WHERE msb.adm_appl_nbr NOT IN (""" + ui + """) AND msb.acad_prog != orb.acad_pro
 ORDER BY 1, 2""")
             query_to_update('update_prog.txt',
                             ('PS_ADM_APPL_PROG', 'ACAD_PROG'),
+                            row_metadata,
                             'PROG_CHANGE.csv',
                             lcur,
                             [0, 1, 5])
@@ -548,6 +555,7 @@ WHERE msb.adm_appl_nbr NOT IN (""" + ui + """) AND msb.acad_plan != orb.acad_pla
 ORDER BY 1, 2""")
             query_to_update('update_plan.txt',
                             ('PS_ADM_APPL_PLAN', 'ACAD_PLAN'),
+                            row_metadata,
                             'PLAN_CHANGE.csv',
                             lcur,
                             [0, 1, 6])
@@ -559,6 +567,7 @@ AND msb.prog_reason != orb.prog_reason
 ORDER BY 1, 2""")
             query_to_update('update_reason.txt',
                             ('PS_ADM_APPL_PROG', 'PROG_REASON'),
+                            row_metadata,
                             'REASON_CHANGE.csv',
                             lcur,
                             [0, 1, 8])
@@ -600,10 +609,6 @@ ORDER BY 1, 2""")
             data = query_to_csv('ACTION_CHANGE.csv', lcur, range(19, 44))
             if data:
                 today = dt.date.today()
-                row_metadata = ', \'SLATE_SYNC - '
-                row_metadata += connop['oracle']['user'].upper()
-                row_metadata += '\', SYSDATE'
-                row_metadata *= 2
                 stmt_groups = []
                 excerpt = ''
                 for i, row in enumerate(data):
@@ -616,7 +621,8 @@ ORDER BY 1, 2""")
                             + ', '.join(prep_sql_vals(*row[7:11]))
                             + ', TRUNC(SYSDATE), '
                             + ', '.join(prep_sql_vals(*row[12:]))
-                            + row_metadata)
+                            + ', '
+                            + ', '.join(row_metadata))
                 stmt_groups.append(excerpt)
                 with open('insert_action.txt', 'w') as file:
                     for row in stmt_groups:
