@@ -88,7 +88,7 @@ def query_to_update(update_filename, update_target, update_metadata, csv_filenam
     wherein the first refers to the relevant emplid column,
     the second refers to the relevant adm_appl_nbr column,
     and the third references the column of update source values."""
-    if len(update_target) == 2 and len(update_metadata) == 4 and len(index_triplet) == 3:
+    if len(update_target) == 2 and len(update_metadata) == 2 and len(index_triplet) == 3:
         data = query_to_csv(csv_filename, cursor, index_triplet)
         if data:
             stmt_groups = []
@@ -107,9 +107,8 @@ def query_to_update(update_filename, update_target, update_metadata, csv_filenam
             with open(update_filename, 'w') as file:
                 for row in stmt_groups:
                     file.write("""UPDATE {}
-SET SCC_ROW_ADD_OPRID = {}, SCC_ROW_ADD_DTTM = {}, SCC_ROW_UPD_OPRID = {}, SCC_ROW_UPD_DTTM = {}, {} = DECODE(ADM_APPL_NBR, {})
-WHERE EMPLID IN ({})
-AND ADM_APPL_NBR = DECODE(EMPLID, {});
+SET SCC_ROW_UPD_OPRID = {}, SCC_ROW_UPD_DTTM = {}, {} = DECODE(ADM_APPL_NBR, {})
+WHERE EMPLID IN ({}) AND ADM_APPL_NBR = DECODE(EMPLID, {});
 """.format(update_target[0], *update_metadata, update_target[1], *row))
     return None
 
@@ -406,7 +405,7 @@ ORDER BY 1, 2""")
             # Query local database
             row_metauser = '\'slate_sync - ' + connop['oracle']['user'].upper() + '\''
             row_metadttm = 'SYSDATE'
-            row_metadata = (row_metauser, row_metadttm, row_metauser, row_metadttm)
+            row_metadata = (row_metauser, row_metadttm)
             ippc = """SELECT *
 FROM mssbase as msb
 INNER JOIN orabase as orb on msb.emplid = orb.emplid and msb.adm_appl_nbr = orb.adm_appl_nbr
@@ -622,7 +621,7 @@ ORDER BY 1, 2""")
                             + ', TRUNC(SYSDATE), '
                             + ', '.join(prep_sql_vals(*row[12:]))
                             + ', '
-                            + ', '.join(row_metadata))
+                            + ', '.join([*row_metadata, *row_metadata]))
                 stmt_groups.append(excerpt)
                 with open('insert_action.txt', 'w') as file:
                     for row in stmt_groups:
