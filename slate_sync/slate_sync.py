@@ -80,37 +80,62 @@ def query_to_csv(filename, cursor, return_indices=None):
     return return_data
 
 
-def query_to_update(update_filename, update_table, update_targets, update_metadata, csv_filename, cursor, index_triplet):
+def query_to_update(update_filename, update_table, update_targets, update_metadata, data, where_addendums=[], addendum_decorators=[]):
     """The update_targets argument should be a list of strings
     wherein each is the name of a column to be updated;
-    the index_triplet argument should be a list of integer indices
-    wherein the first refers to the relevant emplid column,
-    the second refers to the relevant adm_appl_nbr column,
-    and the third references the column of update source values."""
-    if len(update_targets) > 0 and len(update_metadata) == 2 and len(index_triplet) == 3:
-        data = query_to_csv(csv_filename, cursor, index_triplet)
-        if data:
-            stmt_groups = []
-            excerpts = ['', '', '']
-            for i, row in enumerate(data):
-                if (i % 500) == 0 and i > 0:
-                    stmt_groups.append(excerpts)
-                    excerpts = ['', '', '']
-                excerpts[0] += ('\n  \'' + row[1] + '\', \'' + row[2] + '\',')
-                excerpts[1] += ('\n  \'' + row[0] + '\',')
-                excerpts[2] += ('\n  \'' + row[0] + '\', \'' + row[1] + '\',')
-            stmt_groups.append(excerpts)
+    the data argument should be the return value of query_to_csv
+    wherein the return_indices supplied were at least three in quantity
+    whereby the first referred to the relevant emplid column,
+    the second referred to the relevant adm_appl_nbr column,
+    the third referenced the column of update source values,
+    and the remaining optional indices cohere with the subsequent argument;
+    the optional where_addendums argument should be a list of strings
+    wherein the length is equal to the number of return_indices supplied
+    to query_to_csv minus three and whereby each string is the name
+    of an additional column to be used in the where clause;
+    the optional addendum_decorators argument should be a list of
+    two-string tuples wherein the length of addendum_decorators equals
+    the length of where_addendums and whereby the first argument in each tuple
+    is the prefix for the corresponding where_addendums argument and the second
+    argument is the postfix."""
+    if data and len(data[0]) >= 3 and (
+            not where_addendums
+            or not addendum_decorators
+            or len(where_addendums) == len(addendum_decorators)):
+        stmt_groups = []
+        excerpts = []
+        while len(excerpts) < (len(where_addendums) + 3):
+            excerpts.append('')
+        for i, row in enumerate(data):
+            if (i % 500) == 0 and i > 0:
+                stmt_groups.append(excerpts)
+                ei = 0
+                while ei < len(excerpts):
+                    excerpts[ei] = ''
+                    ei += 1
+            excerpts[0] += ('\n  \'' + row[1] + '\', \'' + row[2] + '\',')
+            excerpts[1] += ('\n  \'' + row[0] + '\',')
+            excerpts[2] += ('\n  \'' + row[0] + '\', \'' + row[1] + '\',')
+            for (wi, addendum) in enumerate(where_addendums):
+                dvalue = prep_sql_vals(row[wi + 3])[0]
+                if addendum_decorators:
+                    dvalue = addendum_decorators[wi][0]+ dvalue + addendum_decorators[wi][1]
+                excerpts[wi + 3] += ('\n  \'' + row[1] + '\', ' + dvalue + ',')
+        stmt_groups.append(excerpts)
+        for row in stmt_groups:
+            for i, string in enumerate(row):
+                row[i] = string.rstrip(',') + '\n'
+        with open(update_filename, 'w') as file:
             for row in stmt_groups:
-                for i, string in enumerate(row):
-                    row[i] = string.rstrip(',') + '\n'
-            with open(update_filename, 'w') as file:
-                for row in stmt_groups:
-                    stmt = """UPDATE {}
-SET SCC_ROW_UPD_OPRID = {}, SCC_ROW_UPD_DTTM = {}""".format(update_table, *update_metadata)
-                    for target in update_targets:
-                        stmt = ', '.join([stmt, '{} = DECODE(ADM_APPL_NBR, {})'.format(target, row[0])])
-                    stmt += '\nWHERE EMPLID IN ({}) AND ADM_APPL_NBR = DECODE(EMPLID, {});\n'.format(row[1], row[2])
-                    file.write(stmt)
+                stmt = 'UPDATE {}\nSET SCC_ROW_UPD_OPRID = {}, SCC_ROW_UPD_DTTM = {}'.format(update_table, *update_metadata)
+                for target in update_targets:
+                    stmt = ', '.join([stmt, '{} = DECODE(ADM_APPL_NBR, {})'.format(target, row[0])])
+                stmt += '\nWHERE EMPLID IN ({}) AND ADM_APPL_NBR = DECODE(EMPLID, {})'.format(row[1], row[2])
+                if where_addendums:
+                    for wi, addendum in enumerate(where_addendums):
+                        stmt += ' AND {} = DECODE(ADM_APPL_NBR, {})'.format(addendum, row[wi + 3])
+                stmt += ';\n'
+                file.write(stmt)
     return None
 
 
@@ -188,7 +213,24 @@ def main():
   scc_row_add_oprid text,
   scc_row_add_dttm text,
   scc_row_upd_oprid text,
-  scc_row_upd_dttm text)""")
+  scc_row_upd_dttm text,
+  Xemplid text,
+  Xacad_career text,
+  Xstdnt_car_nbr int,
+  Xadm_appl_nbr text,
+  Xappl_prog_nbr int,
+  Xeffdt text,
+  Xeffseq int,
+  Xacad_plan text,
+  Xdeclare_dt text,
+  Xplan_sequence int,
+  Xreq_term text,
+  Xssr_apt_instance int,
+  Xssr_yr_of_prog text,
+  Xscc_row_add_oprid text,
+  Xscc_row_add_dttm text,
+  Xscc_row_upd_oprid text,
+  Xscc_row_upd_dttm text)""")
             lcur.execute("""CREATE TABLE mssbase (
   emplid text,
   adm_appl_nbr text,
@@ -296,8 +338,55 @@ ORDER BY A.EMPLID, A.ADM_APPL_NBR""", qvars['oracle'])
                         lconn.commit()
                         print(f'Fetched and inserted from row {fc*500 + 1}...')
                         fc += 1
-                    cur.execute("""SELECT A.*
+                    cur.execute("""SELECT
+  A.EMPLID,
+  A.ACAD_CAREER,
+  A.STDNT_CAR_NBR,
+  A.ADM_APPL_NBR,
+  A.APPL_PROG_NBR,
+  TO_CHAR(A.EFFDT, 'YYYY-MM-DD'),
+  A.EFFSEQ,
+  A.INSTITUTION,
+  A.ACAD_PROG,
+  A.PROG_STATUS,
+  A.PROG_ACTION,
+  TO_CHAR(A.ACTION_DT, 'YYYY-MM-DD'),
+  A.PROG_REASON,
+  A.ADMIT_TERM,
+  A.EXP_GRAD_TERM,
+  A.REQ_TERM,
+  A.ACAD_LOAD_APPR,
+  A.CAMPUS,
+  A.ACAD_PROG_DUAL,
+  A.JOINT_PROG_APPR,
+  A.SSR_RS_CANDIT_NBR,
+  A.SSR_APT_INSTANCE,
+  A.SSR_YR_OF_PROG,
+  A.SSR_SHIFT,
+  A.SSR_COHORT_ID,
+  A.SCC_ROW_ADD_OPRID,
+  A.SCC_ROW_ADD_DTTM,
+  A.SCC_ROW_UPD_OPRID,
+  A.SCC_ROW_UPD_DTTM,
+  B.EMPLID,
+  B.ACAD_CAREER,
+  B.STDNT_CAR_NBR,
+  B.ADM_APPL_NBR,
+  B.APPL_PROG_NBR,
+  TO_CHAR(B.EFFDT, 'YYYY-MM-DD'),
+  B.EFFSEQ,
+  B.ACAD_PLAN,
+  TO_CHAR(B.DECLARE_DT, 'YYYY-MM-DD'),
+  B.PLAN_SEQUENCE,
+  B.REQ_TERM,
+  B.SSR_APT_INSTANCE,
+  B.SSR_YR_OF_PROG,
+  B.SCC_ROW_ADD_OPRID,
+  B.SCC_ROW_ADD_DTTM,
+  B.SCC_ROW_UPD_OPRID,
+  B.SCC_ROW_UPD_DTTM
 FROM PS_ADM_APPL_PROG A
+INNER JOIN PS_ADM_APPL_PLAN B ON A.EMPLID = B.EMPLID AND A.ACAD_CAREER = B.ACAD_CAREER AND A.STDNT_CAR_NBR = B.STDNT_CAR_NBR AND A.ADM_APPL_NBR = B.ADM_APPL_NBR AND A.APPL_PROG_NBR = B.APPL_PROG_NBR AND A.EFFDT = B.EFFDT AND A.EFFSEQ = B.EFFSEQ AND B.PLAN_SEQUENCE = 1
 WHERE A.ADMIT_TERM BETWEEN :termlb AND :termub
 AND A.ACAD_CAREER = 'UGRD'
 AND A.EFFDT = (
@@ -325,7 +414,7 @@ ORDER BY A.EMPLID, A.ADM_APPL_NBR""", qvars['oracle'])
                         if not rows:
                             print(f'\nFetched and inserted {cur.rowcount} total rows.\n\n')
                             break
-                        lcur.executemany('INSERT INTO oraaux VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', rows)
+                        lcur.executemany('INSERT INTO oraaux VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', rows)
                         lconn.commit()
                         print(f'Fetched and inserted from row {fc*500 + 1}...')
                         fc += 1
@@ -509,74 +598,108 @@ FROM mssbase as msb
 INNER JOIN orabase as orb on msb.emplid = orb.emplid and msb.adm_appl_nbr = orb.adm_appl_nbr
 WHERE msb.adm_appl_nbr NOT IN (""" + ui + """) AND msb.admit_type != orb.admit_type
 ORDER BY 1, 2""")
+            ldata = query_to_csv('TYPE_CHANGE.csv', lcur, [0, 1, 2])
             query_to_update('update_type.txt',
                             'PS_ADM_APPL_DATA',
                             ['ADMIT_TYPE'],
                             row_metadata,
-                            'TYPE_CHANGE.csv',
-                            lcur,
-                            [0, 1, 2])
+                            ldata)
             lcur.execute("""SELECT *
 FROM mssbase as msb
 INNER JOIN orabase as orb on msb.emplid = orb.emplid and msb.adm_appl_nbr = orb.adm_appl_nbr
 WHERE msb.adm_appl_nbr NOT IN (""" + ui + """) AND msb.academic_level != orb.academic_level
 ORDER BY 1, 2""")
+            ldata = query_to_csv('LEVEL_CHANGE.csv', lcur, [0, 1, 3])
             query_to_update('update_level.txt',
                             'PS_ADM_APPL_DATA',
                             ['ACADEMIC_LEVEL'],
                             row_metadata,
-                            'LEVEL_CHANGE.csv',
-                            lcur,
-                            [0, 1, 3])
+                            ldata)
             lcur.execute("""SELECT *
 FROM mssbase as msb
 INNER JOIN orabase as orb on msb.emplid = orb.emplid and msb.adm_appl_nbr = orb.adm_appl_nbr
 WHERE msb.adm_appl_nbr NOT IN (""" + ui + """) AND msb.admit_term != orb.admit_term
 ORDER BY 1, 2""")
-            query_to_update('update_term.txt',
+            ldata = query_to_csv('TERM_CHANGE.csv', lcur, [0, 1, 4])
+            query_to_update('update_term_prog.txt',
                             'PS_ADM_APPL_PROG',
                             ['ADMIT_TERM', 'REQ_TERM'],
                             row_metadata,
-                            'TERM_CHANGE.csv',
-                            lcur,
-                            [0, 1, 4])
+                            ldata)
+            query_to_update('update_term_plan.txt',
+                            'PS_ADM_APPL_PLAN',
+                            ['REQ_TERM'],
+                            row_metadata,
+                            ldata)
             lcur.execute("""SELECT *
 FROM mssbase as msb
 INNER JOIN orabase as orb on msb.emplid = orb.emplid and msb.adm_appl_nbr = orb.adm_appl_nbr
 WHERE msb.adm_appl_nbr NOT IN (""" + ui + """) AND msb.acad_prog != orb.acad_prog
 ORDER BY 1, 2""")
+            ldata = query_to_csv('PROG_CHANGE.csv', lcur, [0, 1, 5])
             query_to_update('update_prog.txt',
                             'PS_ADM_APPL_PROG',
                             ['ACAD_PROG'],
                             row_metadata,
-                            'PROG_CHANGE.csv',
-                            lcur,
-                            [0, 1, 5])
+                            ldata)
             lcur.execute("""SELECT *
 FROM mssbase as msb
 INNER JOIN orabase as orb on msb.emplid = orb.emplid and msb.adm_appl_nbr = orb.adm_appl_nbr
 WHERE msb.adm_appl_nbr NOT IN (""" + ui + """) AND msb.acad_plan != orb.acad_plan
 ORDER BY 1, 2""")
+            ldata = query_to_csv('PLAN_CHANGE.csv', lcur, [0, 1, 6])
             query_to_update('update_plan.txt',
                             'PS_ADM_APPL_PLAN',
                             ['ACAD_PLAN'],
                             row_metadata,
-                            'PLAN_CHANGE.csv',
-                            lcur,
-                            [0, 1, 6])
-            lcur.execute("""SELECT *
+                            ldata)
+            lcur.execute("""SELECT
+  msb.*,
+  orb.*,
+  '' as [BREAK],
+  orx.emplid,
+  orx.acad_career,
+  orx.stdnt_car_nbr,
+  orx.adm_appl_nbr,
+  orx.appl_prog_nbr,
+  orx.effdt,
+  orx.effseq,
+  orx.institution,
+  orx.acad_prog,
+  orx.prog_status,
+  orx.prog_action,
+  orx.action_dt,
+  orx.prog_reason,
+  orx.admit_term,
+  orx.exp_grad_term,
+  orx.req_term,
+  orx.acad_load_appr,
+  orx.campus,
+  orx.acad_prog_dual,
+  orx.joint_prog_appr,
+  orx.ssr_rs_candit_nbr,
+  orx.ssr_apt_instance,
+  orx.ssr_yr_of_prog,
+  orx.ssr_shift,
+  orx.ssr_cohort_id,
+  orx.scc_row_add_oprid,
+  orx.scc_row_add_dttm,
+  orx.scc_row_upd_oprid,
+  orx.scc_row_upd_dttm
 FROM mssbase as msb
 INNER JOIN orabase as orb on msb.emplid = orb.emplid and msb.adm_appl_nbr = orb.adm_appl_nbr
+INNER JOIN oraaux as orx on orb.emplid = orx.emplid and orb.adm_appl_nbr = orx.adm_appl_nbr
 WHERE msb.adm_appl_nbr NOT IN (""" + ui + """) AND msb.prog_action = orb.prog_action
 AND msb.prog_reason != orb.prog_reason
 ORDER BY 1, 2""")
+            ldata = query_to_csv('REASON_CHANGE.csv', lcur, [0, 1, 8, 24, 25])
             query_to_update('update_reason.txt',
                             'PS_ADM_APPL_PROG',
                             ['PROG_REASON'],
                             row_metadata,
-                            'REASON_CHANGE.csv',
-                            lcur,
-                            [0, 1, 8])
+                            ldata,
+                            ['EFFDT', 'EFFSEQ'],
+                            [('TO_DATE(', ', \'YYYY-MM-DD\')'), ('', '')])
             lcur.execute("""SELECT
   msb.*,
   orb.*,
@@ -605,30 +728,51 @@ ORDER BY 1, 2""")
   orx.ssr_apt_instance,
   orx.ssr_yr_of_prog,
   orx.ssr_shift,
-  orx.ssr_cohort_id
+  orx.ssr_cohort_id,
+  '' as [BREAK],
+  orx.Xemplid,
+  orx.Xacad_career,
+  orx.Xstdnt_car_nbr,
+  orx.Xadm_appl_nbr,
+  orx.Xappl_prog_nbr,
+  orx.Xeffdt,
+  orx.Xeffseq,
+  msb.acad_plan,
+  orx.Xdeclare_dt,
+  orx.Xplan_sequence,
+  msb.admit_term,
+  orx.Xssr_apt_instance,
+  orx.Xssr_yr_of_prog
 FROM mssbase as msb
 INNER JOIN oraref3 as orr3 on msb.prog_action = orr3.prog_action
 INNER JOIN orabase as orb on msb.emplid = orb.emplid and msb.adm_appl_nbr = orb.adm_appl_nbr
 INNER JOIN oraaux as orx on orb.emplid = orx.emplid and orb.adm_appl_nbr = orx.adm_appl_nbr
 WHERE msb.adm_appl_nbr NOT IN (""" + ui + """) AND msb.prog_action != orb.prog_action
 ORDER BY 1, 2""")
-            data = query_to_csv('ACTION_CHANGE.csv', lcur, range(19, 44))
-            if data:
+            ldata = query_to_csv('ACTION_CHANGE.csv', lcur, range(19, 58))
+            if ldata:
                 today = dt.date.today()
                 stmt_groups = []
                 excerpt = ''
-                for i, row in enumerate(data):
-                    if (i % 500) == 0 and i > 0:
+                for i, row in enumerate(ldata):
+                    if (i % 250) == 0 and i > 0:
                         stmt_groups.append(excerpt)
                         excerpt = ''
+                    effseq = (str(row[6] + 1) if dt.datetime.strptime(row[5], '%Y-%m-%d').date() == today else '1')
                     excerpt += '  INTO PS_ADM_APPL_PROG VALUES ({})\n'.format(
                             ', '.join(prep_sql_vals(*row[0:5]))
-                            + ', TRUNC(SYSDATE), {}, '.format(str(row[6] + 1) if dt.datetime.strptime(row[5], '%Y-%m-%d %H:%M:%S').date() == today else '1')
+                            + ', TRUNC(SYSDATE), {}, '.format(effseq)
                             + ', '.join(prep_sql_vals(*row[7:11]))
                             + ', TRUNC(SYSDATE), '
-                            + ', '.join(prep_sql_vals(*row[12:]))
+                            + ', '.join(prep_sql_vals(*row[12:24]))
                             + ', '
                             + ', '.join([*row_metadata, *row_metadata]))
+                    excerpt += '  INTO PS_ADM_APPL_PLAN VALUES ({})\n'.format(
+                            ', '.join(prep_sql_vals(*row[26:31]))
+                            + ', TRUNC(SYSDATE), {}, '.format(effseq)
+                            + ', '.join(prep_sql_vals(row[33]))
+                            + ', TO_DATE({}, \'YYYY-MM-DD\'), '.format(*prep_sql_vals(row[34]))
+                            + ', '.join(prep_sql_vals(*row[35:])))
                 stmt_groups.append(excerpt)
                 with open('insert_action.txt', 'w') as file:
                     for row in stmt_groups:
