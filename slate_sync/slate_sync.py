@@ -748,6 +748,9 @@ INNER JOIN oraref3 as orr3 on msb.prog_action = orr3.prog_action
 INNER JOIN orabase as orb on msb.emplid = orb.emplid and msb.adm_appl_nbr = orb.adm_appl_nbr
 INNER JOIN oraaux as orx on orb.emplid = orx.emplid and orb.adm_appl_nbr = orx.adm_appl_nbr
 WHERE msb.adm_appl_nbr NOT IN (""" + ui + """) AND msb.prog_action != orb.prog_action
+AND msb.admit_term is not null
+AND msb.acad_prog is not null
+AND msb.acad_plan is not null
 ORDER BY 1, 2""")
             ldata = query_to_csv('ACTION_CHANGE.csv', lcur, range(19, 58))
             if ldata:
@@ -764,7 +767,7 @@ ORDER BY 1, 2""")
                             + ', TRUNC(SYSDATE), {}, '.format(effseq)
                             + ', '.join(prep_sql_vals(*row[7:11]))
                             + ', TRUNC(SYSDATE), '
-                            + ', '.join(prep_sql_vals(*row[12:24]))
+                            + ', '.join(prep_sql_vals(*row[12:25]))
                             + ', '
                             + ', '.join([*row_metadata, *row_metadata]))
                     excerpt += '  INTO PS_ADM_APPL_PLAN VALUES ({})\n'.format(
@@ -772,7 +775,9 @@ ORDER BY 1, 2""")
                             + ', TRUNC(SYSDATE), {}, '.format(effseq)
                             + ', '.join(prep_sql_vals(row[33]))
                             + ', TO_DATE({}, \'YYYY-MM-DD\'), '.format(*prep_sql_vals(row[34]))
-                            + ', '.join(prep_sql_vals(*row[35:])))
+                            + ', '.join(prep_sql_vals(*row[35:]))
+                            + ', '
+                            + ', '.join([*row_metadata, *row_metadata]))
                 stmt_groups.append(excerpt)
                 with open('insert_action.txt', 'w') as file:
                     for row in stmt_groups:
