@@ -12,6 +12,7 @@ import datetime as dt
 import json
 import os
 import pyodbc
+import shutil
 import sqlite3
 
 
@@ -35,7 +36,11 @@ def prep_sql_vals(*args):
     return prepped
 
 
-def query_to_csv(filename, cursor, return_indices=None):
+def query_to_csv(filename, cursor, return_indices=None, archivename=None):
+    """
+    If archivename is supplied, it should be a path string for
+    an "archived" copy of the file.
+    """
     return_data = []
     with TemporaryFile('r+', newline='') as tfile:
         twriter = csv.writer(tfile)
@@ -79,6 +84,8 @@ def query_to_csv(filename, cursor, return_indices=None):
                 try:
                     with open(filename, 'w', newline='') as file:
                         file.write(tfile.read())
+                    if archivename:
+                        shutil.copyfile(filename, archivename)
                     break
                 except OSError as e:
                     print(str(e))
@@ -86,7 +93,7 @@ def query_to_csv(filename, cursor, return_indices=None):
     return return_data
 
 
-def query_to_update(update_filename, update_table, update_targets, update_metadata, data, where_addendums=[], addendum_decorators=[]):
+def query_to_update(update_filename, update_table, update_targets, update_metadata, data, where_addendums=[], addendum_decorators=[], archivename=None):
     """The update_targets argument should be a list of strings
     wherein each is the name of a column to be updated;
     the data argument should be the return value of query_to_csv
@@ -114,7 +121,7 @@ def query_to_update(update_filename, update_table, update_targets, update_metada
             excerpts.append('')
         for i, row in enumerate(data):
             if (i % 500) == 0 and i > 0:
-                stmt_groups.append(excerpts)
+                stmt_groups.append(excerpts.copy())
                 ei = 0
                 while ei < len(excerpts):
                     excerpts[ei] = ''
@@ -144,6 +151,8 @@ def query_to_update(update_filename, update_table, update_targets, update_metada
                                 stmt += ' AND {} = DECODE(ADM_APPL_NBR, {})'.format(addendum, row[wi + 3])
                         stmt += ';\n'
                         file.write(stmt)
+                if archivename:
+                    shutil.copyfile(update_filename, archivename)
                 break
             except OSError as e:
                 print(str(e))
@@ -156,12 +165,14 @@ def main():
         connop = None
         qvars = None
         root = ''
+        cwd = os.getcwd()
+        today = dt.date.today()
         if 'HOME' in os.environ:
             root = os.environ['HOME']
         else:
             root = os.environ['HOMEDRIVE'] + os.environ['HOMEPATH']
         root = os.path.join(root, 'slate_sync_vars')
-        localdb = 'temp{}.db'.format(dt.datetime.today().strftime('%Y%m%d%H%M%S'))
+        localdb = 'temp{}.db'.format(today.strftime('%Y%m%d%H%M%S'))
         with open(os.path.join(root, 'connect.json')) as file:
             connop = json.load(file)
         with open(os.path.join(root, 'qvars.json')) as file:
@@ -182,6 +193,10 @@ def main():
                 and validate_keys(qvars, ('oracle',))
                 and validate_keys(qvars['oracle'], ('termlb', 'termub'))):
             raise KeyError('JSON files malformed; refer to README.')
+        for tdir in ['audit', 'update', '.archive']:
+            testdir = os.path.join(cwd, tdir)
+            if not os.path.exists(testdir):
+                os.mkdir(testdir)
     except (KeyError, OSError, json.JSONDecodeError) as e:
         print(str(e))
     else:
@@ -608,13 +623,13 @@ ORDER BY 1, 2"""
 """
     
             lcur.execute(ippc)
-            query_to_csv('INVALID_PP_COMBO.csv', lcur)
+            query_to_csv(os.path.join(cwd, 'audit', 'INVALID_PP_COMBO.csv'), lcur)
             lcur.execute(iarc)
-            query_to_csv('INVALID_AR_COMBO.csv', lcur)
+            query_to_csv(os.path.join(cwd, 'audit', 'INVALID_AR_COMBO.csv'), lcur)
             lcur.execute(iau)
-            query_to_csv('INVALID_ACTION_UPDATE.csv', lcur)
+            query_to_csv(os.path.join(cwd, 'audit', 'INVALID_ACTION_UPDATE.csv'), lcur)
             lcur.execute(cla)
-            query_to_csv('CHANGES_TO_LOCKED_APPLICATIONS.csv', lcur)
+            query_to_csv(os.path.join(cwd, 'audit', 'CHANGES_TO_LOCKED_APPLICATIONS.csv'), lcur)
     
             lcur.execute("""SELECT *
 FROM mssbase as msb
@@ -622,61 +637,82 @@ INNER JOIN orabase as orb on msb.emplid = orb.emplid and msb.adm_appl_nbr = orb.
 WHERE msb.adm_appl_nbr NOT IN (""" + ui + """) AND msb.admit_type != orb.admit_type
 AND orb.admit_type != 'XRE'
 ORDER BY 1, 2""")
-            ldata = query_to_csv('TYPE_CHANGE.csv', lcur, [0, 1, 2])
-            query_to_update('update_type.txt',
+            ldata = query_to_csv(os.path.join(cwd, 'update', 'TYPE_CHANGE.csv'),
+                                 lcur,
+                                 [0, 1, 2],
+                                 os.path.join(cwd, '.archive', 'TYPE_CHANGE_{}.csv'.format(today.strftime('%Y%m%d'))))
+            query_to_update(os.path.join(cwd, 'update', 'update_type.txt'),
                             'PS_ADM_APPL_DATA',
                             ['ADMIT_TYPE'],
                             row_metadata,
-                            ldata)
+                            ldata,
+                            archivename=os.path.join(cwd, '.archive', 'update_type_{}.txt'.format(today.strftime('%Y%m%d'))))
             lcur.execute("""SELECT *
 FROM mssbase as msb
 INNER JOIN orabase as orb on msb.emplid = orb.emplid and msb.adm_appl_nbr = orb.adm_appl_nbr
 WHERE msb.adm_appl_nbr NOT IN (""" + ui + """) AND msb.academic_level != orb.academic_level
 ORDER BY 1, 2""")
-            ldata = query_to_csv('LEVEL_CHANGE.csv', lcur, [0, 1, 3])
-            query_to_update('update_level.txt',
+            ldata = query_to_csv(os.path.join(cwd, 'update', 'LEVEL_CHANGE.csv'),
+                                 lcur,
+                                 [0, 1, 3],
+                                 os.path.join(cwd, '.archive', 'LEVEL_CHANGE_{}.csv'.format(today.strftime('%Y%m%d'))))
+            query_to_update(os.path.join(cwd, 'update', 'update_level.txt'),
                             'PS_ADM_APPL_DATA',
                             ['ACADEMIC_LEVEL'],
                             row_metadata,
-                            ldata)
+                            ldata,
+                            archivename=os.path.join(cwd, '.archive', 'update_level_{}.txt'.format(today.strftime('%Y%m%d'))))
             lcur.execute("""SELECT *
 FROM mssbase as msb
 INNER JOIN orabase as orb on msb.emplid = orb.emplid and msb.adm_appl_nbr = orb.adm_appl_nbr
 WHERE msb.adm_appl_nbr NOT IN (""" + ui + """) AND msb.admit_term != orb.admit_term
 ORDER BY 1, 2""")
-            ldata = query_to_csv('TERM_CHANGE.csv', lcur, [0, 1, 4])
-            query_to_update('update_term_prog.txt',
+            ldata = query_to_csv(os.path.join(cwd, 'update', 'TERM_CHANGE.csv'),
+                                 lcur,
+                                 [0, 1, 4],
+                                 os.path.join(cwd, '.archive', 'TERM_CHANGE_{}.csv'.format(today.strftime('%Y%m%d'))))
+            query_to_update(os.path.join(cwd, 'update', 'update_term_prog.txt'),
                             'PS_ADM_APPL_PROG',
                             ['ADMIT_TERM', 'REQ_TERM'],
                             row_metadata,
-                            ldata)
-            query_to_update('update_term_plan.txt',
+                            ldata,
+                            archivename=os.path.join(cwd, '.archive', 'update_term_prog_{}.txt'.format(today.strftime('%Y%m%d'))))
+            query_to_update(os.path.join(cwd, 'update', 'update_term_plan.txt'),
                             'PS_ADM_APPL_PLAN',
                             ['REQ_TERM'],
                             row_metadata,
-                            ldata)
+                            ldata,
+                            archivename=os.path.join(cwd, '.archive', 'update_term_plan_{}.txt'.format(today.strftime('%Y%m%d'))))
             lcur.execute("""SELECT *
 FROM mssbase as msb
 INNER JOIN orabase as orb on msb.emplid = orb.emplid and msb.adm_appl_nbr = orb.adm_appl_nbr
 WHERE msb.adm_appl_nbr NOT IN (""" + ui + """) AND msb.acad_prog != orb.acad_prog
 ORDER BY 1, 2""")
-            ldata = query_to_csv('PROG_CHANGE.csv', lcur, [0, 1, 5])
-            query_to_update('update_prog.txt',
+            ldata = query_to_csv(os.path.join(cwd, 'update', 'PROG_CHANGE.csv'),
+                                 lcur,
+                                 [0, 1, 5],
+                                 os.path.join(cwd, '.archive', 'PROG_CHANGE_{}.csv'.format(today.strftime('%Y%m%d'))))
+            query_to_update(os.path.join(cwd, 'update', 'update_prog.txt'),
                             'PS_ADM_APPL_PROG',
                             ['ACAD_PROG'],
                             row_metadata,
-                            ldata)
+                            ldata,
+                            archivename=os.path.join(cwd, '.archive', 'update_prog_{}.txt'.format(today.strftime('%Y%m%d'))))
             lcur.execute("""SELECT *
 FROM mssbase as msb
 INNER JOIN orabase as orb on msb.emplid = orb.emplid and msb.adm_appl_nbr = orb.adm_appl_nbr
 WHERE msb.adm_appl_nbr NOT IN (""" + ui + """) AND msb.acad_plan != orb.acad_plan
 ORDER BY 1, 2""")
-            ldata = query_to_csv('PLAN_CHANGE.csv', lcur, [0, 1, 6])
-            query_to_update('update_plan.txt',
+            ldata = query_to_csv(os.path.join(cwd, 'update', 'PLAN_CHANGE.csv'),
+                                 lcur,
+                                 [0, 1, 6],
+                                 os.path.join(cwd, '.archive', 'PLAN_CHANGE_{}.csv'.format(today.strftime('%Y%m%d'))))
+            query_to_update(os.path.join(cwd, 'update', 'update_plan.txt'),
                             'PS_ADM_APPL_PLAN',
                             ['ACAD_PLAN'],
                             row_metadata,
-                            ldata)
+                            ldata,
+                            archivename=os.path.join(cwd, '.archive', 'update_plan_{}.txt'.format(today.strftime('%Y%m%d'))))
             lcur.execute("""SELECT
   msb.*,
   orb.*,
@@ -716,14 +752,18 @@ INNER JOIN oraaux as orx on orb.emplid = orx.emplid and orb.adm_appl_nbr = orx.a
 WHERE msb.adm_appl_nbr NOT IN (""" + ui + """) AND msb.prog_action = orb.prog_action
 AND msb.prog_reason != orb.prog_reason
 ORDER BY 1, 2""")
-            ldata = query_to_csv('REASON_CHANGE.csv', lcur, [0, 1, 8, 24, 25])
-            query_to_update('update_reason.txt',
+            ldata = query_to_csv(os.path.join(cwd, 'update', 'REASON_CHANGE.csv'),
+                                 lcur,
+                                 [0, 1, 8, 24, 25],
+                                 os.path.join(cwd, '.archive', 'REASON_CHANGE_{}.csv'.format(today.strftime('%Y%m%d'))))
+            query_to_update(os.path.join(cwd, 'update', 'update_reason.txt'),
                             'PS_ADM_APPL_PROG',
                             ['PROG_REASON'],
                             row_metadata,
                             ldata,
                             ['EFFDT', 'EFFSEQ'],
-                            [('TO_DATE(', ', \'YYYY-MM-DD\')'), ('', '')])
+                            [('TO_DATE(', ', \'YYYY-MM-DD\')'), ('', '')],
+                            os.path.join(cwd, '.archive', 'update_reason_{}.txt'.format(today.strftime('%Y%m%d'))))
             lcur.execute("""SELECT
   msb.*,
   orb.*,
@@ -776,9 +816,11 @@ AND msb.admit_term is not null
 AND msb.acad_prog is not null
 AND msb.acad_plan is not null
 ORDER BY 1, 2""")
-            ldata = query_to_csv('ACTION_CHANGE.csv', lcur, range(19, 58))
+            ldata = query_to_csv(os.path.join(cwd, 'update', 'ACTION_CHANGE.csv'),
+                                 lcur,
+                                 range(19, 58),
+                                 os.path.join(cwd, '.archive', 'ACTION_CHANGE_{}.csv'.format(today.strftime('%Y%m%d'))))
             if ldata:
-                today = dt.date.today()
                 stmt_groups = []
                 excerpt = ''
                 for i, row in enumerate(ldata):
@@ -805,9 +847,11 @@ ORDER BY 1, 2""")
                 stmt_groups.append(excerpt)
                 while True:
                     try:
-                        with open('insert_action.txt', 'w') as file:
+                        with open(os.path.join(cwd, 'update', 'insert_action.txt'), 'w') as file:
                             for row in stmt_groups:
                                 file.write('INSERT ALL\n{}SELECT * FROM dual;\n'.format(row))
+                        shutil.copyfile(os.path.join(cwd, 'update', 'insert_action.txt'),
+                                        os.path.join(cwd, '.archive', 'insert_action_{}.txt'.format(today.strftime('%Y%m%d'))))
                         break
                     except OSError as e:
                         print(str(e))
