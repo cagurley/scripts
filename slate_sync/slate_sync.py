@@ -597,6 +597,7 @@ ORDER BY 1, 2"""
 FROM mssbase as msb
 INNER JOIN orabase as orb on msb.emplid = orb.emplid and msb.adm_appl_nbr = orb.adm_appl_nbr
 WHERE msb.adm_appl_nbr NOT IN (""" + ui + """) AND msb.admit_type != orb.admit_type
+AND orb.admit_type != 'XRE'
 ORDER BY 1, 2""")
             ldata = query_to_csv('TYPE_CHANGE.csv', lcur, [0, 1, 2])
             query_to_update('update_type.txt',
