@@ -75,8 +75,14 @@ def query_to_csv(filename, cursor, return_indices=None):
                 break
         if write_perm:
             tfile.seek(0)
-            with open(filename, 'w', newline='') as file:
-                file.write(tfile.read())
+            while True:
+                try:
+                    with open(filename, 'w', newline='') as file:
+                        file.write(tfile.read())
+                    break
+                except OSError as e:
+                    print(str(e))
+                    input('Ensure that the file or directory is not open or locked, then press enter to try again.')
     return return_data
 
 
@@ -125,17 +131,23 @@ def query_to_update(update_filename, update_table, update_targets, update_metada
         for row in stmt_groups:
             for i, string in enumerate(row):
                 row[i] = string.rstrip(',') + '\n'
-        with open(update_filename, 'w') as file:
-            for row in stmt_groups:
-                stmt = 'UPDATE {}\nSET SCC_ROW_UPD_OPRID = {}, SCC_ROW_UPD_DTTM = {}'.format(update_table, *update_metadata)
-                for target in update_targets:
-                    stmt = ', '.join([stmt, '{} = DECODE(ADM_APPL_NBR, {})'.format(target, row[0])])
-                stmt += '\nWHERE EMPLID IN ({}) AND ADM_APPL_NBR = DECODE(EMPLID, {})'.format(row[1], row[2])
-                if where_addendums:
-                    for wi, addendum in enumerate(where_addendums):
-                        stmt += ' AND {} = DECODE(ADM_APPL_NBR, {})'.format(addendum, row[wi + 3])
-                stmt += ';\n'
-                file.write(stmt)
+        while True:
+            try:
+                with open(update_filename, 'w') as file:
+                    for row in stmt_groups:
+                        stmt = 'UPDATE {}\nSET SCC_ROW_UPD_OPRID = {}, SCC_ROW_UPD_DTTM = {}'.format(update_table, *update_metadata)
+                        for target in update_targets:
+                            stmt = ', '.join([stmt, '{} = DECODE(ADM_APPL_NBR, {})'.format(target, row[0])])
+                        stmt += '\nWHERE EMPLID IN ({}) AND ADM_APPL_NBR = DECODE(EMPLID, {})'.format(row[1], row[2])
+                        if where_addendums:
+                            for wi, addendum in enumerate(where_addendums):
+                                stmt += ' AND {} = DECODE(ADM_APPL_NBR, {})'.format(addendum, row[wi + 3])
+                        stmt += ';\n'
+                        file.write(stmt)
+                break
+            except OSError as e:
+                print(str(e))
+                input('Ensure that the file or directory is not open or locked, then press any enter to try again.')
     return None
 
 
@@ -143,12 +155,18 @@ def main():
     try:
         connop = None
         qvars = None
+        root = ''
+        if 'HOME' in os.environ:
+            root = os.environ['HOME']
+        else:
+            root = os.environ['HOMEDRIVE'] + os.environ['HOMEPATH']
+        root = os.path.join(root, 'slate_sync_vars')
         localdb = 'temp{}.db'.format(dt.datetime.today().strftime('%Y%m%d%H%M%S'))
-        with open('connect.json') as file:
+        with open(os.path.join(root, 'connect.json')) as file:
             connop = json.load(file)
-        with open('qvars.json') as file:
+        with open(os.path.join(root, 'qvars.json')) as file:
             qvars = json.load(file)
-        if (validate_keys(connop, ('oracle', 'sqlserver'))
+        if not (validate_keys(connop, ('oracle', 'sqlserver'))
                 and validate_keys(connop['sqlserver'],
                                   ('driver',
                                    'host',
@@ -163,6 +181,11 @@ def main():
                                    'service_name'))
                 and validate_keys(qvars, ('oracle',))
                 and validate_keys(qvars['oracle'], ('termlb', 'termub'))):
+            raise KeyError('JSON files malformed; refer to README.')
+    except (KeyError, OSError, json.JSONDecodeError) as e:
+        print(str(e))
+    else:
+        try:
             lconn = sqlite3.connect(localdb)
     
             # Setup local database
@@ -780,27 +803,36 @@ ORDER BY 1, 2""")
                             + ', '
                             + ', '.join([*row_metadata, *row_metadata]))
                 stmt_groups.append(excerpt)
-                with open('insert_action.txt', 'w') as file:
-                    for row in stmt_groups:
-                        file.write('INSERT ALL\n{}SELECT * FROM dual;\n'.format(row))
+                while True:
+                    try:
+                        with open('insert_action.txt', 'w') as file:
+                            for row in stmt_groups:
+                                file.write('INSERT ALL\n{}SELECT * FROM dual;\n'.format(row))
+                        break
+                    except OSError as e:
+                        print(str(e))
+                        input('Ensure that the file or directory is not open or locked, then press any enter to try again.')
     
             # Cleanup local database
-#            lcur.execute('DROP TABLE IF EXISTS orabase')
-#            lcur.execute('DROP TABLE IF EXISTS oraaux')
-#            lcur.execute('DROP TABLE IF EXISTS mssbase')
-#            lcur.execute('DROP TABLE IF EXISTS oraref1')
-#            lcur.execute('DROP TABLE IF EXISTS oraref2')
-#            lcur.execute('DROP TABLE IF EXISTS oraref3')
-#            lconn.commit()
-        else:
-            print('Missing keys in JSON files; check for proper formation.')
-    except (OSError, json.JSONDecodeError, cxo.Error, pyodbc.DatabaseError, sqlite3.DatabaseError) as e:
-        print(str(e))
+            lcur.execute('DROP TABLE IF EXISTS orabase')
+            lcur.execute('DROP TABLE IF EXISTS oraaux')
+            lcur.execute('DROP TABLE IF EXISTS mssbase')
+            lcur.execute('DROP TABLE IF EXISTS oraref1')
+            lcur.execute('DROP TABLE IF EXISTS oraref2')
+            lcur.execute('DROP TABLE IF EXISTS oraref3')
+            lconn.commit()
+        except (pyodbc.DatabaseError) as e:
+            conn.close()
+            print(str(e))
+        except (OSError, cxo.Error, sqlite3.DatabaseError) as e:
+            print(str(e))
+        finally:
+            lconn.rollback()
+            lcur.close()
+            lconn.close()
+            os.remove(localdb)
     finally:
-        lconn.rollback()
-        lcur.close()
-        lconn.close()
-#        os.remove(localdb)
+            input('Press enter to finish...')
 
 if __name__ == '__main__':
     main()
