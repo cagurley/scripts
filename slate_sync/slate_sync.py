@@ -166,12 +166,17 @@ def main():
         qvars = None
         root = ''
         cwd = os.getcwd()
-        today = dt.date.today()
+        today = dt.datetime.today()
         if 'HOME' in os.environ:
             root = os.environ['HOME']
         else:
             root = os.environ['HOMEDRIVE'] + os.environ['HOMEPATH']
-        root = os.path.join(root, 'slate_sync_vars')
+        rootop1 = os.path.join(root, 'slate_sync_vars')
+        rootop2 = 'C:\\slate_sync_vars'
+        if os.path.exists(rootop1):
+            root = rootop1
+        else:
+            root = rootop2
         localdb = 'temp{}.db'.format(today.strftime('%Y%m%d%H%M%S'))
         with open(os.path.join(root, 'connect.json')) as file:
             connop = json.load(file)
@@ -827,7 +832,7 @@ ORDER BY 1, 2""")
                     if (i % 250) == 0 and i > 0:
                         stmt_groups.append(excerpt)
                         excerpt = ''
-                    effseq = (str(row[6] + 1) if dt.datetime.strptime(row[5], '%Y-%m-%d').date() == today else '1')
+                    effseq = (str(row[6] + 1) if dt.datetime.strptime(row[5], '%Y-%m-%d').date() == today.date() else '1')
                     excerpt += '  INTO PS_ADM_APPL_PROG VALUES ({})\n'.format(
                             ', '.join(prep_sql_vals(*row[0:5]))
                             + ', TRUNC(SYSDATE), {}, '.format(effseq)
