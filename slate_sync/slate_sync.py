@@ -93,7 +93,15 @@ def query_to_csv(filename, cursor, return_indices=None, archivename=None):
     return return_data
 
 
-def query_to_update(update_filename, update_table, update_targets, update_metadata, data, where_addendums=[], addendum_decorators=[], archivename=None):
+def query_to_update(update_filename,
+                    update_table,
+                    update_targets,
+                    update_metadata,
+                    data,
+                    where_addendums=[],
+                    addendum_decorators=[],
+                    archivename=None,
+                    static_targets=[]):
     """The update_targets argument should be a list of strings
     wherein each is the name of a column to be updated;
     the data argument should be the return value of query_to_csv
@@ -110,7 +118,9 @@ def query_to_update(update_filename, update_table, update_targets, update_metada
     two-string tuples wherein the length of addendum_decorators equals
     the length of where_addendums and whereby the first argument in each tuple
     is the prefix for the corresponding where_addendums argument and the second
-    argument is the postfix."""
+    argument is the postfix; the optional static_targets argument should be
+    a list of string two-tuples wherein the first element is a column name to be
+    updated and the second element is the update value."""
     if data and len(data[0]) >= 3 and (
             not where_addendums
             or not addendum_decorators
@@ -143,6 +153,9 @@ def query_to_update(update_filename, update_table, update_targets, update_metada
                 with open(update_filename, 'w') as file:
                     for row in stmt_groups:
                         stmt = 'UPDATE {}\nSET SCC_ROW_UPD_OPRID = {}, SCC_ROW_UPD_DTTM = {}'.format(update_table, *update_metadata)
+                        if static_targets:
+                            for pair in static_targets:
+                                stmt = ', '.join([stmt, '{} = {}'.format(pair[0], pair[1])])
                         for target in update_targets:
                             stmt = ', '.join([stmt, '{} = DECODE(ADM_APPL_NBR, {})'.format(target, row[0])])
                         stmt += '\nWHERE EMPLID IN ({}) AND ADM_APPL_NBR = DECODE(EMPLID, {})'.format(row[1], row[2])
@@ -651,7 +664,8 @@ ORDER BY 1, 2""")
                             ['ADMIT_TYPE'],
                             row_metadata,
                             ldata,
-                            archivename=os.path.join(cwd, '.archive', 'update_type_{}.txt'.format(today.strftime('%Y%m%d'))))
+                            archivename=os.path.join(cwd, '.archive', 'update_type_{}.txt'.format(today.strftime('%Y%m%d'))),
+                            static_targets=[('ADM_UPDATED_DT', 'TRUNC(SYSDATE)'), ('ADM_UPDATED_BY', row_metauser)])
             lcur.execute("""SELECT *
 FROM mssbase as msb
 INNER JOIN orabase as orb on msb.emplid = orb.emplid and msb.adm_appl_nbr = orb.adm_appl_nbr
@@ -666,7 +680,8 @@ ORDER BY 1, 2""")
                             ['ACADEMIC_LEVEL'],
                             row_metadata,
                             ldata,
-                            archivename=os.path.join(cwd, '.archive', 'update_level_{}.txt'.format(today.strftime('%Y%m%d'))))
+                            archivename=os.path.join(cwd, '.archive', 'update_level_{}.txt'.format(today.strftime('%Y%m%d'))),
+                            static_targets=[('ADM_UPDATED_DT', 'TRUNC(SYSDATE)'), ('ADM_UPDATED_BY', row_metauser)])
             lcur.execute("""SELECT *
 FROM mssbase as msb
 INNER JOIN orabase as orb on msb.emplid = orb.emplid and msb.adm_appl_nbr = orb.adm_appl_nbr
