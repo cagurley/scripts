@@ -132,7 +132,7 @@ def query_to_update(update_filename, update_table, update_targets, update_metada
             for (wi, addendum) in enumerate(where_addendums):
                 dvalue = prep_sql_vals(row[wi + 3])[0]
                 if addendum_decorators:
-                    dvalue = addendum_decorators[wi][0]+ dvalue + addendum_decorators[wi][1]
+                    dvalue = addendum_decorators[wi][0] + dvalue + addendum_decorators[wi][1]
                 excerpts[wi + 3] += ('\n  \'' + row[1] + '\', ' + dvalue + ',')
         stmt_groups.append(excerpts)
         for row in stmt_groups:
@@ -207,7 +207,7 @@ def main():
     else:
         try:
             lconn = sqlite3.connect(localdb)
-    
+
             # Setup local database
             lcur = lconn.cursor()
             lcur.execute('DROP TABLE IF EXISTS orabase')
@@ -308,7 +308,7 @@ def main():
                     ('CN', 'WAPP', 3),
                     ('CN', 'WADM', 3)])
             lconn.commit()
-    
+
             # Retrieve data from SQL Server database
             with pyodbc.connect(driver=connop['sqlserver']['driver'],
                                 server=connop['sqlserver']['host'],
@@ -317,15 +317,15 @@ def main():
                                 pwd=connop['sqlserver']['password']) as conn:
                 print(conn.getinfo(pyodbc.SQL_DRIVER_VER))
                 with conn.cursor() as cur:
-                    cur.execute("""select 
-  (select [value] from dbo.getFieldTopTable(p.[id], 'emplid')) as [EMPLID], 
-  (select [value] from dbo.getFieldTopTable(a.[id], 'adm_appl_nbr')) as [ADM_APPL_NBR], 
-  (select top 1 [value] from dbo.getFieldExportTable(a.[id], 'ug_appl_admit_type')) as [ADMIT_TYPE], 
-  (select top 1 [value] from dbo.getFieldExportTable(a.[id], 'ug_appl_academic_level')) as [ACADEMIC_LEVEL], 
-  (select top 1 [value] from dbo.getFieldExportTable(a.[id], 'appl_admit_term')) as [ADMIT_TERM], 
-  coalesce((select top 1 [value] from dbo.getFieldTopTable(a.[id], 'ug_appl_acad_prog_pending')), (select top 1 [value] from dbo.getFieldTopTable(a.[id], 'ug_appl_acad_prog'))) as [ACAD_PROG], 
-  coalesce((select top 1 [value] from dbo.getFieldExportTable(a.[id], 'ug_appl_acad_plan_pending')), (select top 1 [value] from dbo.getFieldExportTable(a.[id], 'ug_appl_acad_plan'))) as [ACAD_PLAN], 
-  (select top 1 [value] from dbo.getFieldExportTable(a.[id], 'prog_action')) as [PROG_ACTION], 
+                    cur.execute("""select
+  (select [value] from dbo.getFieldTopTable(p.[id], 'emplid')) as [EMPLID],
+  (select [value] from dbo.getFieldTopTable(a.[id], 'adm_appl_nbr')) as [ADM_APPL_NBR],
+  (select top 1 [value] from dbo.getFieldExportTable(a.[id], 'ug_appl_admit_type')) as [ADMIT_TYPE],
+  (select top 1 [value] from dbo.getFieldExportTable(a.[id], 'ug_appl_academic_level')) as [ACADEMIC_LEVEL],
+  (select top 1 [value] from dbo.getFieldExportTable(a.[id], 'appl_admit_term')) as [ADMIT_TERM],
+  coalesce((select top 1 [value] from dbo.getFieldTopTable(a.[id], 'ug_appl_acad_prog_pending')), (select top 1 [value] from dbo.getFieldTopTable(a.[id], 'ug_appl_acad_prog'))) as [ACAD_PROG],
+  coalesce((select top 1 [value] from dbo.getFieldExportTable(a.[id], 'ug_appl_acad_plan_pending')), (select top 1 [value] from dbo.getFieldExportTable(a.[id], 'ug_appl_acad_plan'))) as [ACAD_PLAN],
+  (select top 1 [value] from dbo.getFieldExportTable(a.[id], 'prog_action')) as [PROG_ACTION],
   (select top 1 [value] from dbo.getFieldExportTable(a.[id], 'prog_reason')) as [PROG_REASON]
 from [application] a
 inner join [person] p on p.[id] = a.[person]
@@ -534,7 +534,7 @@ ORDER BY 1, 2""")
                         lconn.commit()
                         print(f'Fetched and inserted from row {fc*500 + 1}...')
                         fc += 1
-    
+
             # Query local database
             row_metauser = '\'slate_sync - ' + connop['oracle']['user'].upper() + '\''
             row_metadttm = 'SYSDATE'
@@ -626,7 +626,7 @@ ORDER BY 1, 2"""
     OR uorb.prog_reason != umsb.prog_reason
   )
 """
-    
+
             lcur.execute(ippc)
             query_to_csv(os.path.join(cwd, 'audit', 'INVALID_PP_COMBO.csv'), lcur)
             lcur.execute(iarc)
@@ -635,7 +635,7 @@ ORDER BY 1, 2"""
             query_to_csv(os.path.join(cwd, 'audit', 'INVALID_ACTION_UPDATE.csv'), lcur)
             lcur.execute(cla)
             query_to_csv(os.path.join(cwd, 'audit', 'CHANGES_TO_LOCKED_APPLICATIONS.csv'), lcur)
-    
+
             lcur.execute("""SELECT *
 FROM mssbase as msb
 INNER JOIN orabase as orb on msb.emplid = orb.emplid and msb.adm_appl_nbr = orb.adm_appl_nbr
@@ -861,7 +861,7 @@ ORDER BY 1, 2""")
                     except OSError as e:
                         print(str(e))
                         input('Ensure that the file or directory is not open or locked, then press any enter to try again.')
-    
+
             # Cleanup local database
             lcur.execute('DROP TABLE IF EXISTS orabase')
             lcur.execute('DROP TABLE IF EXISTS oraaux')
@@ -881,7 +881,8 @@ ORDER BY 1, 2""")
             lconn.close()
             os.remove(localdb)
     finally:
-            input('Press enter to finish...')
+        input('Press enter to finish...')
+
 
 if __name__ == '__main__':
     main()
