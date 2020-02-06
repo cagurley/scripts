@@ -586,7 +586,8 @@ INNER JOIN orabase as orb on msb.emplid = orb.emplid and msb.adm_appl_nbr = orb.
 INNER JOIN oraref3 as orr3 on orb.prog_action = orr3.prog_action
 WHERE orr3.rank = 3
 AND (
-  orb.admit_type != msb.admit_type
+  (orb.admit_type != msb.admit_type
+    AND orb.admit_type != 'XRE')
   OR orb.academic_level != msb.academic_level
   OR orb.admit_term != msb.admit_term
   OR orb.acad_prog != msb.acad_prog
@@ -630,7 +631,8 @@ ORDER BY 1, 2"""
   INNER JOIN oraref3 as uorr3 on uorb.prog_action = uorr3.prog_action
   WHERE uorr3.rank = 3
   AND (
-    uorb.admit_type != umsb.admit_type
+    (uorb.admit_type != umsb.admit_type
+    AND uorb.admit_type != 'XRE')
     OR uorb.academic_level != umsb.academic_level
     OR uorb.admit_term != umsb.admit_term
     OR uorb.acad_prog != umsb.acad_prog
